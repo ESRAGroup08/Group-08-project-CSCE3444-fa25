@@ -1,0 +1,76 @@
+
+import React, { useState, useEffect, useMemo } from 'react';
+
+const Game = ({ onGameOver }) => {
+  const [text, setText] = useState('The quick brown fox jumps over the lazy dog.');
+  const [inputValue, setInputValue] = useState('');
+  const [startTime, setStartTime] = useState(null);
+  const [wpm, setWpm] = useState(0);
+  const [accuracy, setAccuracy] = useState(100);
+
+  const textCharacters = useMemo(() => text.split(''), [text]);
+
+  useEffect(() => {
+    if (inputValue.length === 1 && !startTime) {
+      setStartTime(Date.now());
+    }
+
+    if (inputValue.length > 0 && startTime) {
+      const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
+      const wordsTyped = inputValue.length / 5;
+      setWpm(Math.round((wordsTyped / elapsedTime) * 60));
+
+      let correctChars = 0;
+      for (let i = 0; i < inputValue.length; i++) {
+        if (inputValue[i] === text[i]) {
+          correctChars++;
+        }
+      }
+      setAccuracy(Math.round((correctChars / inputValue.length) * 100));
+    }
+
+    if (inputValue === text) {
+      const elapsedTime = (Date.now() - startTime) / 1000;
+      onGameOver(elapsedTime, wpm, accuracy);
+    }
+  }, [inputValue, startTime, text, onGameOver, wpm, accuracy]);
+
+  const getCharClass = (char, index) => {
+    if (index === inputValue.length) {
+      return 'current';
+    }
+    if (index < inputValue.length) {
+      return char === inputValue[index] ? 'correct' : 'incorrect';
+    }
+    return '';
+  };
+
+  return (
+    <div className="w-full h-screen bg-gray-900 text-white flex flex-col items-center justify-center">
+      <div className="w-1/2 text-center">
+        <h2 className="text-3xl font-bold mb-4">Type the following:</h2>
+        <div className="text-2xl mb-8 bg-gray-800 p-4 rounded-lg font-mono">
+          {textCharacters.map((char, index) => (
+            <span key={index} className={getCharClass(char, index)}>
+              {char}
+            </span>
+          ))}
+        </div>
+        <input
+          type="text"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          className="w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 font-mono"
+          autoFocus
+        />
+        <div className="flex justify-around w-full mt-4 text-xl">
+          <p>Time: {startTime ? Math.round((Date.now() - startTime) / 1000) : 0}s</p>
+          <p>WPM: {wpm}</p>
+          <p>Accuracy: {accuracy}%</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Game;

@@ -8,7 +8,7 @@
     "test": "tests"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "npx live-server --open=login.html",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

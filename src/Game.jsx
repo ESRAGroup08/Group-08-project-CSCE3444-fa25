@@ -84,6 +84,12 @@ const Game = ({ onGameOver }) => {
             </span>
           ))}
         </div>
+        <div className="w-full bg-gray-700 rounded-full h-2.5 mb-4">
+          <div 
+            className="bg-cyan-500 h-2.5 rounded-full" 
+            style={{ width: `${progress}%`, transition: 'width 0.1s linear' }}
+          ></div>
+        </div>
         <input
           type="text"
           value={inputValue}

@@ -135,3 +135,21 @@ textarea {
     font-size: 1.4rem;
   }
 }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+th, td {
+  border: 1px solid #b7a2d7;
+  padding: 8px;
+}
+
+th {
+  background-color: #2a2038;
+}
+
+tr:nth-child(even) {
+  background-color: #302541;
+}

@@ -1,6 +1,6 @@
-// src/components/Lobby.jsx
 import React, { useEffect, useState } from "react";
 import io from "socket.io-client";
+import ThemeToggle from "./ThemeToggle"; // NEW: Theme toggle component
 
 let socket; // single socket instance per module
 
@@ -23,7 +23,6 @@ export default function Lobby({ username, onEnterGame }) {
     });
 
     socket.on("room_update", (payload) => {
-      // payload: { roomId, players }
       if (payload.roomId === joinedRoom) {
         setPlayers(payload.players);
       }
@@ -45,7 +44,6 @@ export default function Lobby({ username, onEnterGame }) {
     });
 
     return () => {
-      // cleanup listeners but keep socket alive globally
       socket.off("lobby_list");
       socket.off("room_update");
       socket.off("joined_room");
@@ -123,14 +121,17 @@ export default function Lobby({ username, onEnterGame }) {
             <button onClick={leaveRoom} style={{ marginLeft: 8 }}>
               Leave
             </button>
-            {/* only show start to host (server will check) */}
             <button onClick={startGame} style={{ marginLeft: 8 }}>
               Start Game
             </button>
           </div>
         </>
       )}
+
+      {/* NEW FEATURE 3: Theme Toggle */}
+      <div style={{ marginTop: 12 }}>
+        <ThemeToggle />
+      </div>
     </div>
   );
 }
-

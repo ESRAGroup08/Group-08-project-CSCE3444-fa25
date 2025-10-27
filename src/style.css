@@ -19,6 +19,28 @@ body {
   min-height: 100vh;
   text-align: center;
 }
+/* Light theme styles */
+body.light {
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+body.light .lobby-container,
+body.light .game-container,
+body.light .container {
+  background-color: #ffffff;
+  color: #333;
+}
+
+body.light .btn {
+  background-color: #6c63ff;
+  color: white;
+}
+
+body.light .btn:hover {
+  background-color: #7d74ff;
+}
+
 
 /* ===== General Containers ===== */
 .container,

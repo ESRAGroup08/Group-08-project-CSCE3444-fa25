@@ -2,11 +2,31 @@
 import React, { useState, useEffect, useMemo } from 'react';
 
 const Game = ({ onGameOver }) => {
-  const [text, setText] = useState('The quick brown fox jumps over the lazy dog.');
+  const [text, setText] = useState('Loading...');
   const [inputValue, setInputValue] = useState('');
   const [startTime, setStartTime] = useState(null);
   const [wpm, setWpm] = useState(0);
   const [accuracy, setAccuracy] = useState(100);
+  const [progress, setProgress] = useState(0); // <-- F-06: State for progress bar
+
+  // F-05: Fetch text based on difficulty
+  useEffect(() => {
+    // This is just an example. You'd use a real API or text source.
+    let textToSet = '';
+    switch (difficulty) {
+      case 'easy':
+        textToSet = 'The quick brown fox jumps over the lazy dog.';
+        break;
+      case 'hard':
+        textToSet = 'Supercalifragilisticexpialidocious pneumatic pseudocode exemplifies paradoxical idiosyncrasies.';
+        break;
+      case 'medium':
+      default:
+        textToSet = 'A journey of a thousand miles begins with a single step. To be or not to be, that is the question.';
+    }
+    setText(textToSet);
+    setInputValue(''); // Clear input when text changes
+  }, [difficulty]); // Re-run if difficulty changes
 
   const textCharacters = useMemo(() => text.split(''), [text]);
 
@@ -27,6 +47,14 @@ const Game = ({ onGameOver }) => {
         }
       }
       setAccuracy(Math.round((correctChars / inputValue.length) * 100));
+
+      // <-- F-06: Calculate progress
+      setProgress((inputValue.length / text.length) * 100);
+    }
+
+    // Reset progress if input is empty
+    if (inputValue.length === 0) {
+      setProgress(0);
     }
 
     if (inputValue === text) {

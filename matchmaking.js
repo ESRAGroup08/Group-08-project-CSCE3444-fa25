@@ -205,7 +205,7 @@ export async function recordMatchResult(db, collection, doc, setDoc, updateDoc, 
             const userRef = doc(db, 'users', userId);
             await updateDoc(userRef, {
                 casualMatchesPlayed: increment(1),
-                casualWins: won ? increment(1) : (await (await doc(db, 'users', userId).get())).data()?.casualWins || 0
+                casualWins: won ? increment(1) : increment(0)
             });
         }
         

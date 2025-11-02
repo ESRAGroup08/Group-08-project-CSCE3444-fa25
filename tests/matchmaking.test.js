@@ -308,13 +308,4 @@ async function runAllTests() {
     console.log('\n=== Tests Complete ===');
 }
 
-// Run tests if this file is executed directly
-if (typeof window === 'undefined') {
-    // Node.js environment
-    runAllTests().catch(console.error);
-} else {
-    // Browser environment - export for manual execution
-    window.runMatchmakingTests = runAllTests;
-}
-
 export { runAllTests };

@@ -24,6 +24,8 @@ const mockGetDocs = async (query) => {
     
     if (random > 0.5) {
         // Simulate finding an opponent
+        // NOTE: Math.random() is acceptable here for demo/mock data only
+        // Production code should use cryptographically secure random for real user data
         return {
             empty: false,
             docs: [{
@@ -104,6 +106,8 @@ function logToOutput(message) {
 }
 
 // Initialize user profile
+// NOTE: Math.random() is acceptable here for demo/mock data only
+// Production code should use secure authentication and real user IDs from the backend
 const userProfile = {
     userId: 'user-' + Math.floor(Math.random() * 10000),
     rankPoints: 1000 + Math.floor(Math.random() * 500 - 250),

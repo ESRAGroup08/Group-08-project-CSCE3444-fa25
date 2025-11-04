@@ -1,6 +1,8 @@
+import './style.css';
+import './index.css';
 import React, { useEffect, useState } from "react";
 import io from "socket.io-client";
-import ThemeToggle from "./ThemeToggle"; // NEW: Theme toggle component
+import ThemeToggle from "./components/ThemeToggle.jsx"; // NEW: Theme toggle component
 
 let socket; // single socket instance per module
 

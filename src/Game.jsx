@@ -1,17 +1,17 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 
-const Game = ({ onGameOver }) => {
+const Game = () => {
+  const navigate = useNavigate();
   const [text, setText] = useState('Loading...');
   const [inputValue, setInputValue] = useState('');
   const [startTime, setStartTime] = useState(null);
   const [wpm, setWpm] = useState(0);
   const [accuracy, setAccuracy] = useState(100);
-  const [progress, setProgress] = useState(0); // <-- F-06: State for progress bar
+  const [progress, setProgress] = useState(0);
+  const difficulty = 'medium'; // Added difficulty definition
 
-  // F-05: Fetch text based on difficulty
   useEffect(() => {
-    // This is just an example. You'd use a real API or text source.
     let textToSet = '';
     switch (difficulty) {
       case 'easy':
@@ -25,8 +25,8 @@ const Game = ({ onGameOver }) => {
         textToSet = 'A journey of a thousand miles begins with a single step. To be or not to be, that is the question.';
     }
     setText(textToSet);
-    setInputValue(''); // Clear input when text changes
-  }, [difficulty]); // Re-run if difficulty changes
+    setInputValue('');
+  }, [difficulty]);
 
   const textCharacters = useMemo(() => text.split(''), [text]);
 
@@ -36,7 +36,7 @@ const Game = ({ onGameOver }) => {
     }
 
     if (inputValue.length > 0 && startTime) {
-      const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
+      const elapsedTime = (Date.now() - startTime) / 1000;
       const wordsTyped = inputValue.length / 5;
       setWpm(Math.round((wordsTyped / elapsedTime) * 60));
 
@@ -47,21 +47,18 @@ const Game = ({ onGameOver }) => {
         }
       }
       setAccuracy(Math.round((correctChars / inputValue.length) * 100));
-
-      // <-- F-06: Calculate progress
       setProgress((inputValue.length / text.length) * 100);
     }
 
-    // Reset progress if input is empty
     if (inputValue.length === 0) {
       setProgress(0);
     }
 
     if (inputValue === text) {
       const elapsedTime = (Date.now() - startTime) / 1000;
-      onGameOver(elapsedTime, wpm, accuracy);
+      navigate('/results', { state: { elapsedTime, wpm, accuracy } });
     }
-  }, [inputValue, startTime, text, onGameOver, wpm, accuracy]);
+  }, [inputValue, startTime, text, navigate, wpm, accuracy]);
 
   const getCharClass = (char, index) => {
     if (index === inputValue.length) {

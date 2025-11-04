@@ -1,7 +1,15 @@
-
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 
-const Login = ({ onLogin }) => {
+const Login = () => {
+  const navigate = useNavigate();
+
+  const handleLogin = () => {
+    // In a real app, you'd have authentication logic here.
+    // For now, we'll just navigate to the lobby.
+    navigate('/lobby');
+  };
+
   return (
     <div className="w-full h-screen bg-gray-900 text-white flex flex-col items-center justify-center">
       <h1 className="text-5xl font-bold mb-8">Galactic Typer</h1>
@@ -19,7 +27,7 @@ const Login = ({ onLogin }) => {
             className="bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
           />
           <button 
-            onClick={onLogin} 
+            onClick={handleLogin} 
             className="bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-xl px-12 py-3 rounded-lg mt-4">
             Login
           </button>

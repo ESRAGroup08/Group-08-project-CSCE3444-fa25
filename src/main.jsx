@@ -17,9 +17,6 @@ const router = createBrowserRouter([
     errorElement: <ErrorDisplay />,
     children: [
       { index: true, element: <Login /> },
-      { path: '/menu', element: <MainMenu /> },
-      { path: '/lobby', element: <Lobby /> },
-      { path: '/lobby/custom', element: <CustomLobby /> },
     ],
   },
 ]);

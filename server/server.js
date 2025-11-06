@@ -14,12 +14,23 @@ const PORT = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname, '../dist')));
 
 let rooms = {}; // In-memory store for rooms
+let lobbyUsers = []; // In-memory store for users in the lobby
 
 io.on('connection', (socket) => {
   console.log('a user connected:', socket.id);
 
   // Send the current list of rooms to the new user
   socket.emit('lobby_list', Object.values(rooms).map(r => ({ roomId: r.roomId, players: r.players })));
+
+  // Send the current list of users in the lobby to the new user
+  socket.emit('update_user_list', lobbyUsers);
+
+  socket.on('join_lobby', (username) => {
+    if (!lobbyUsers.includes(username)) {
+      lobbyUsers.push(username);
+      io.emit('update_user_list', lobbyUsers);
+    }
+  });
 
   socket.on('lobby_list_request', () => {
     socket.emit('lobby_list', Object.values(rooms).map(r => ({ roomId: r.roomId, players: r.players })));
@@ -87,6 +98,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('user disconnected:', socket.id);
+
     // Find which room the user was in and remove them
     for (const roomId in rooms) {
       const playerIndex = rooms[roomId].players.findIndex(p => p.id === socket.id);
@@ -98,6 +110,13 @@ io.on('connection', (socket) => {
         console.log(`${player.username} disconnected from room ${roomId}`);
         break;
       }
+    }
+
+    // Remove user from lobby
+    const userIndex = lobbyUsers.findIndex(username => socket.id.includes(username));
+    if (userIndex > -1) {
+      lobbyUsers.splice(userIndex, 1);
+      io.emit('update_user_list', lobbyUsers);
     }
   });
 });

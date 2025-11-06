@@ -5,9 +5,7 @@ const Login = () => {
   const navigate = useNavigate();
 
   const handleLogin = () => {
-    // In a real app, you'd have authentication logic here.
-    // For now, we'll just navigate to the lobby.
-    navigate('/lobby');
+    navigate("/menu");
   };
 
   return (

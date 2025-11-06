@@ -1,12 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import App from './App.jsx';
 import Login from './Login.jsx';
+import MainMenu from './components/MainMenu.jsx';
 import Lobby from './Lobby.jsx';
-import Game from './Game.jsx';
-import Leaderboard from './Leaderboard.jsx';
-import Results from './Results.jsx';
 import './index.css';
 
 const router = createBrowserRouter([
@@ -14,11 +12,10 @@ const router = createBrowserRouter([
     path: '/',
     element: <App />,
     children: [
-      { index: true, element: <Login /> },
-      { path: 'lobby', element: <Lobby /> },
-      { path: 'game', element: <Game /> },
-      { path: 'leaderboard', element: <Leaderboard /> },
-      { path: 'results', element: <Results /> },
+      { index: true, element: <Navigate to="/login" replace /> },
+      { path: '/login', element: <Login /> },
+      { path: '/menu', element: <MainMenu /> },
+      { path: '/lobby', element: <Lobby /> },
     ],
   },
 ]);

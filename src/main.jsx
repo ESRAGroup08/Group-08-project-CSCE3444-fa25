@@ -1,28 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import App from './App.jsx';
-import Login from './Login.jsx';
-import MainMenu from './components/MainMenu.jsx';
-import Lobby from './Lobby.jsx';
-import CustomLobby from './components/CustomLobby';
 import './index.css';
-
-import ErrorDisplay from "./ErrorDisplay.jsx";
-
-const router = createBrowserRouter([
-  {
-    path: '/',
-    element: <App />,
-    errorElement: <ErrorDisplay />,
-    children: [
-      { index: true, element: <Login /> },
-    ],
-  },
-]);
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <App />
   </React.StrictMode>
 );

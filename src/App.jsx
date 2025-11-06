@@ -1,13 +1,10 @@
 import React from 'react';
-import { Outlet } from 'react-router-dom';
-import io from 'socket.io-client';
-
-const socket = io('/');
+import Login from './Login.jsx';
 
 function App() {
   return (
     <div className="App">
-      <Outlet context={{ socket }} />
+      <Login />
     </div>
   );
 }

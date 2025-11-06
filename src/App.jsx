@@ -7,7 +7,12 @@ const socket = io('http://localhost:3000');
 function App() {
   return (
     <div className="App">
-      <Outlet context={{ socket }} />
+      <header>
+        <h1>Galactic Typing</h1>
+      </header>
+      <main>
+        <Outlet context={{ socket }} />
+      </main>
     </div>
   );
 }

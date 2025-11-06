@@ -8,10 +8,13 @@ import Lobby from './Lobby.jsx';
 import CustomLobby from './components/CustomLobby';
 import './index.css';
 
+import ErrorPage from "./ErrorPage";
+
 const router = createBrowserRouter([
   {
     path: '/',
     element: <App />,
+    errorElement: <ErrorPage />,
     children: [
       { index: true, element: <Login /> },
       { path: '/menu', element: <MainMenu /> },

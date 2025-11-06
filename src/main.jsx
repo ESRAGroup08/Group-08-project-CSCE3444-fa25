@@ -8,7 +8,7 @@ import Lobby from './Lobby.jsx';
 import CustomLobby from './components/CustomLobby';
 import './index.css';
 
-import ErrorPage from "./ErrorPage";
+import ErrorPage from "./ErrorPage.jsx";
 
 const router = createBrowserRouter([
   {

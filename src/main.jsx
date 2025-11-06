@@ -13,8 +13,7 @@ const router = createBrowserRouter([
     path: '/',
     element: <App />,
     children: [
-      { index: true, element: <Navigate to="/login" replace /> },
-      { path: '/login', element: <Login /> },
+      { index: true, element: <Login /> },
       { path: '/menu', element: <MainMenu /> },
       { path: '/lobby', element: <Lobby /> },
       { path: '/lobby/custom', element: <CustomLobby /> },

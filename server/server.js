@@ -15,6 +15,8 @@ app.use(express.static(path.join(__dirname, '../dist')));
 
 let rooms = {}; // In-memory store for rooms
 let lobbyUsers = []; // In-memory store for users in the lobby
+let casualWaitingPlayer = null;
+let rankedWaitingPlayer = null;
 
 io.on('connection', (socket) => {
   console.log('a user connected:', socket.id);
@@ -23,12 +25,36 @@ io.on('connection', (socket) => {
   socket.emit('lobby_list', Object.values(rooms).map(r => ({ roomId: r.roomId, players: r.players })));
 
   // Send the current list of users in the lobby to the new user
-  socket.emit('update_user_list', lobbyUsers);
+  socket.emit('update_user_list', lobbyUsers.map(u => u.username));
 
   socket.on('join_lobby', (username) => {
-    if (!lobbyUsers.includes(username)) {
-      lobbyUsers.push(username);
-      io.emit('update_user_list', lobbyUsers);
+    if (!lobbyUsers.some(user => user.id === socket.id)) {
+      lobbyUsers.push({ username, id: socket.id });
+      io.emit('update_user_list', lobbyUsers.map(u => u.username));
+    }
+  });
+
+  socket.on('join_casual', () => {
+    if (!casualWaitingPlayer) {
+      casualWaitingPlayer = socket;
+      socket.emit('waiting_for_opponent');
+    } else {
+      const roomId = `room_${socket.id}_${casualWaitingPlayer.id}`;
+      socket.emit("match_found", { roomId: roomId });
+      casualWaitingPlayer.emit("match_found", { roomId: roomId });
+      casualWaitingPlayer = null;
+    }
+  });
+
+  socket.on("join_ranked", () => {
+    if (!rankedWaitingPlayer) {
+      rankedWaitingPlayer = socket;
+      socket.emit('waiting_for_opponent');
+    } else {
+      const roomId = `room_${socket.id}_${rankedWaitingPlayer.id}`;
+      socket.emit("match_found", { roomId: roomId });
+      rankedWaitingPlayer.emit("match_found", { roomId: roomId });
+      rankedWaitingPlayer = null;
     }
   });
 
@@ -99,6 +125,13 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('user disconnected:', socket.id);
 
+    if (casualWaitingPlayer === socket) {
+      casualWaitingPlayer = null;
+    }
+    if (rankedWaitingPlayer === socket) {
+      rankedWaitingPlayer = null;
+    }
+
     // Find which room the user was in and remove them
     for (const roomId in rooms) {
       const playerIndex = rooms[roomId].players.findIndex(p => p.id === socket.id);
@@ -113,10 +146,10 @@ io.on('connection', (socket) => {
     }
 
     // Remove user from lobby
-    const userIndex = lobbyUsers.findIndex(username => socket.id.includes(username));
+    const userIndex = lobbyUsers.findIndex(user => user.id === socket.id);
     if (userIndex > -1) {
       lobbyUsers.splice(userIndex, 1);
-      io.emit('update_user_list', lobbyUsers);
+      io.emit('update_user_list', lobbyUsers.map(u => u.username));
     }
   });
 });

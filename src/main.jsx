@@ -5,6 +5,7 @@ import App from './App.jsx';
 import Login from './Login.jsx';
 import MainMenu from './components/MainMenu.jsx';
 import Lobby from './Lobby.jsx';
+import CustomLobby from './components/CustomLobby';
 import './index.css';
 
 const router = createBrowserRouter([
@@ -16,6 +17,7 @@ const router = createBrowserRouter([
       { path: '/login', element: <Login /> },
       { path: '/menu', element: <MainMenu /> },
       { path: '/lobby', element: <Lobby /> },
+      { path: '/lobby/custom', element: <CustomLobby /> },
     ],
   },
 ]);

@@ -4,6 +4,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm install
 COPY . .
+RUN ls -l src
 RUN npm run build
 
 # Stage 2: The Runner

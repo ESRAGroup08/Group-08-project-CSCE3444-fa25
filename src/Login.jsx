@@ -1,6 +1,12 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const Login = () => {
+  const navigate = useNavigate();
+
+  const handleLogin = () => {
+    navigate("/menu");
+  };
 
   return (
     <div className="w-full h-screen bg-gray-900 text-white flex flex-col items-center justify-center">
@@ -19,6 +25,7 @@ const Login = () => {
             className="bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
           />
           <button 
+            onClick={handleLogin} 
             className="bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-xl px-12 py-3 rounded-lg mt-4">
             Login
           </button>

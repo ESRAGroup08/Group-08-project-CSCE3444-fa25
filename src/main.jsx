@@ -1,10 +1,30 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { createHashRouter, RouterProvider } from 'react-router-dom';
 import App from './App.jsx';
+import Login from './Login.jsx';
+import MainMenu from './components/MainMenu.jsx';
+import Lobby from './Lobby.jsx';
+import CustomLobby from './components/CustomLobby';
+import ErrorDisplay from "./ErrorDisplay.jsx";
 import './index.css';
+
+const router = createHashRouter([
+  {
+    path: '/',
+    element: <App />,
+    errorElement: <ErrorDisplay />,
+    children: [
+      { index: true, element: <Login /> },
+      { path: '/menu', element: <MainMenu /> },
+      { path: '/lobby', element: <Lobby /> },
+      { path: '/lobby/custom', element: <CustomLobby /> },
+    ],
+  },
+]);
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <RouterProvider router={router} />
   </React.StrictMode>
 );

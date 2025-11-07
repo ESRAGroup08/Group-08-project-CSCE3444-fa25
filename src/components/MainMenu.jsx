@@ -6,6 +6,7 @@ import Header from './Header.jsx';
 const MainMenu = () => {
   const navigate = useNavigate();
 
+<<<<<<< HEAD
   const handleMultiplayer = () => {
     navigate('/lobby');
   };
@@ -18,6 +19,8 @@ const MainMenu = () => {
     navigate('/');
   };
 
+=======
+>>>>>>> b762ce29dd0a5f97fce93f702171f220016225ed
   return (
     <>
       <Header />
@@ -25,6 +28,7 @@ const MainMenu = () => {
         <nav className="main-navigation" aria-label="Main game menu">
           <ul>
             <li>
+<<<<<<< HEAD
               <button className="menu-button" onClick={handleMultiplayer}>
                 MULTIPLAYER
               </button>
@@ -38,6 +42,17 @@ const MainMenu = () => {
               <button className="menu-button secondary" onClick={handleQuit}>
                 QUIT
               </button>
+=======
+              <button className="menu-button" onClick={() => navigate('/lobby')}>
+                Multiplayer
+              </button>
+            </li>
+            <li>
+              <button className="menu-button">Leaderboards</button>
+            </li>
+            <li>
+              <button className="menu-button secondary">Quit</button>
+>>>>>>> b762ce29dd0a5f97fce93f702171f220016225ed
             </li>
           </ul>
         </nav>
@@ -46,4 +61,8 @@ const MainMenu = () => {
   );
 };
 
+<<<<<<< HEAD
 export default MainMenu;
+=======
+export default MainMenu;
+>>>>>>> b762ce29dd0a5f97fce93f702171f220016225ed

@@ -80,7 +80,7 @@ h2 {
 .lobby-container button {
   display: inline-block;
   background-color: #4214f2;
-  color: white !important;
+  color: white;
   border: none;
   padding: 15px 30px;
   font-size: 1rem;
@@ -174,8 +174,4 @@ th {
 
 tr:nth-child(even) {
   background-color: #302541;
-}
-
-.bg-gray-800\/50 button {
-    color: #FFFFFF;
 }

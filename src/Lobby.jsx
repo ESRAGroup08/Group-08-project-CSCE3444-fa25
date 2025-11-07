@@ -12,6 +12,14 @@ const Lobby = () => {
     setWaiting(true);
   };
 
+  const handleRanked = () => {
+    alert("Searching for a ranked match...");
+  };
+
+  const handleCustomPlay = () => {
+    navigate('/lobby/custom');
+  };
+
   useEffect(() => {
     if (socket) {
       socket.on("match_found", (data) => {
@@ -34,8 +42,8 @@ const Lobby = () => {
         ) : (
           <ul>
             <li>
-              <button className="menu-button" onClick={() => navigate('/lobby/custom')}>
-                Custom Lobbys
+              <button className="menu-button" onClick={handleCustomPlay}>
+                Custom Play
               </button>
             </li>
             <li>
@@ -44,7 +52,9 @@ const Lobby = () => {
               </button>
             </li>
             <li>
-              <button className="menu-button" onClick={() => socket.emit("join_ranked")}>Ranked</button>
+              <button className="menu-button" onClick={handleRanked}>
+                Ranked
+              </button>
             </li>
             <li>
               <button className="menu-button secondary" onClick={() => navigate('/menu')}>

@@ -175,3 +175,7 @@ th {
 tr:nth-child(even) {
   background-color: #302541;
 }
+
+.bg-gray-800\/50 button {
+    color: #FFFFFF;
+}

@@ -17,11 +17,13 @@ const Login = () => {
           <input 
             type="text" 
             placeholder="Username" 
+            aria-label="Username"
             className="bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
           />
           <input 
             type="password" 
             placeholder="Password" 
+            aria-label="Password"
             className="bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
           />
           <button 

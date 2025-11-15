@@ -1,44 +1,67 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import './components/MainMenu.css';
 
 const Lobby = () => {
   const navigate = useNavigate();
   const { socket } = useOutletContext();
-  const [waiting, setWaiting] = useState(false);
+  const [isWaiting, setIsWaiting] = useState(false);
 
+  // --- Click handler for the "Casual" button ---
   const handleCasualClick = () => {
-    socket.emit("join_casual");
-    setWaiting(true);
+    if (socket && socket.connected) {
+      console.log('CLIENT: Emitting "casual:enqueue" to the server.');
+      socket.emit("casual:enqueue");
+    } else {
+      console.error('CLIENT: Socket not connected. Cannot send event.');
+      alert('Not connected to the server. Please refresh the page.');
+    }
   };
 
   const handleRanked = () => {
-    alert("Searching for a ranked match...");
+    alert("This feature is coming soon!");
   };
 
   const handleCustomPlay = () => {
     navigate('/lobby/custom');
   };
 
+  // --- Effect to manage socket event listeners ---
   useEffect(() => {
-    if (socket) {
-      socket.on("match_found", (data) => {
-        navigate(`/game/${data.roomId}`);
-      });
+    // Don't set up listeners if the socket isn't ready
+    if (!socket) {
+      console.log('CLIENT: Lobby waiting for socket connection...');
+      return;
     }
 
-    return () => {
-      if (socket) {
-        socket.off("match_found");
-      }
+    console.log('CLIENT: Lobby component mounted. Setting up listeners.');
+
+    // Define the function that will run when the server confirms we're in the queue.
+    const onEnqueued = () => {
+      console.log('CLIENT: Received "casual:enqueued" from server. Updating UI to show waiting status.');
+      setIsWaiting(true);
     };
-  }, [socket, navigate]);
+
+    // Attach the listener
+    socket.on("casual:enqueued", onEnqueued);
+
+    // This is the cleanup function. It runs when the component is unmounted.
+    // It's crucial for preventing memory leaks and duplicate listeners.
+    return () => {
+      console.log('CLIENT: Lobby component unmounting. Cleaning up listeners.');
+      socket.off("casual:enqueued", onEnqueued);
+    };
+  }, [socket]); // This effect re-runs if the socket object ever changes.
 
   return (
     <div className="main-menu-container">
       <nav className="main-navigation">
-        {waiting ? (
-          <p>Waiting for opponent...</p>
+        {isWaiting ? (
+          <div>
+            <h2 className="text-2xl font-bold">Waiting for opponent...</h2>
+            <p>The server is looking for another player.</p>
+            {/* Optional: Add a "Cancel" button that emits 'casual:dequeue' */}
+          </div>
         ) : (
           <ul>
             <li>

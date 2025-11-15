@@ -1,38 +1,45 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useOutletContext } from 'react-router-dom';
 
 const Game = () => {
-  const navigate = useNavigate();
+  const { state } = useLocation(); // Get data passed from navigate()
+  const { socket } = useOutletContext(); // Get the shared socket
+  
+  // Extract game data passed from App.jsx
+  const gameData = state?.gameData;
+  
   const [text, setText] = useState('Loading...');
   const [inputValue, setInputValue] = useState('');
   const [startTime, setStartTime] = useState(null);
   const [wpm, setWpm] = useState(0);
   const [accuracy, setAccuracy] = useState(100);
   const [progress, setProgress] = useState(0);
-  const difficulty = 'medium'; // Added difficulty definition
+  
+  // --- NEW: State for opponent's progress ---
+  const [opponentProgress, setOpponentProgress] = useState(0);
+  
+  const difficulty = 'medium'; 
 
   useEffect(() => {
-    let textToSet = '';
-    switch (difficulty) {
-      case 'easy':
-        textToSet = 'The quick brown fox jumps over the lazy dog.';
-        break;
-      case 'hard':
-        textToSet = 'Supercalifragilisticexpialidocious pneumatic pseudocode exemplifies paradoxical idiosyncrasies.';
-        break;
-      case 'medium':
-      default:
-        textToSet = 'A journey of a thousand miles begins with a single step. To be or not to be, that is the question.';
-    }
+    let textToSet = 'A journey of a thousand miles begins with a single step. To be or not to be, that is the question.';
     setText(textToSet);
     setInputValue('');
   }, [difficulty]);
 
   const textCharacters = useMemo(() => text.split(''), [text]);
-
+  
+  // This effect handles local typing logic and sends progress to the server.
   useEffect(() => {
     if (inputValue.length === 1 && !startTime) {
       setStartTime(Date.now());
+    }
+
+    const newProgress = (inputValue.length / text.length) * 100;
+    setProgress(newProgress);
+    
+    // --- NEW: Send progress to the server ---
+    if (socket && gameData) {
+      socket.emit('game:progress', { roomId: gameData.roomId, progress: newProgress });
     }
 
     if (inputValue.length > 0 && startTime) {
@@ -47,46 +54,62 @@ const Game = () => {
         }
       }
       setAccuracy(Math.round((correctChars / inputValue.length) * 100));
-      setProgress((inputValue.length / text.length) * 100);
-    }
-
-    if (inputValue.length === 0) {
-      setProgress(0);
     }
 
     if (inputValue === text) {
-      const elapsedTime = (Date.now() - startTime) / 1000;
-      navigate('/results', { state: { elapsedTime, wpm, accuracy } });
+      // Handle game finish logic here
+      console.log("Game finished!");
+      // You would navigate to a results screen, e.g., navigate('/results', ...);
     }
-  }, [inputValue, startTime, text, navigate, wpm, accuracy]);
+  }, [inputValue, startTime, text, socket, gameData]);
+  
+  // --- NEW: Listen for opponent's progress updates ---
+  useEffect(() => {
+    if (!socket) return;
+    
+    const onOpponentProgress = (data) => {
+        // Make sure the progress update is not from yourself
+        if (data.socketId !== socket.id) {
+            setOpponentProgress(data.progress);
+        }
+    };
+    
+    socket.on('game:progressUpdate', onOpponentProgress);
+    
+    return () => {
+      socket.off('game:progressUpdate', onOpponentProgress);
+    };
+  }, [socket]);
+
 
   const getCharClass = (char, index) => {
-    if (index === inputValue.length) {
-      return 'current';
-    }
-    if (index < inputValue.length) {
-      return char === inputValue[index] ? 'correct' : 'incorrect';
-    }
+    if (index === inputValue.length) return 'current';
+    if (index < inputValue.length) return char === inputValue[index] ? 'correct' : 'incorrect';
     return '';
   };
 
   return (
     <div className="w-full h-screen bg-gray-900 text-white flex flex-col items-center justify-center">
       <div className="w-1/2 text-center">
-        <h2 className="text-3xl font-bold mb-4">Type the following:</h2>
+        {/* Opponent's Progress Bar */}
+        <div className="mb-2">
+            <p className="text-sm text-left">Opponent</p>
+            <div className="w-full bg-red-700 rounded-full h-2.5">
+                <div className="bg-red-500 h-2.5 rounded-full" style={{ width: `${opponentProgress}%` }}></div>
+            </div>
+        </div>
+        
+        {/* Your Progress Bar */}
+        <div className="w-full bg-gray-700 rounded-full h-2.5 mb-4">
+          <div className="bg-cyan-500 h-2.5 rounded-full" style={{ width: `${progress}%`, transition: 'width 0.1s linear' }}></div>
+        </div>
+
         <div className="text-2xl mb-8 bg-gray-800 p-4 rounded-lg font-mono">
           {textCharacters.map((char, index) => (
-            <span key={index} className={getCharClass(char, index)}>
-              {char}
-            </span>
+            <span key={index} className={getCharClass(char, index)}>{char}</span>
           ))}
         </div>
-        <div className="w-full bg-gray-700 rounded-full h-2.5 mb-4">
-          <div 
-            className="bg-cyan-500 h-2.5 rounded-full" 
-            style={{ width: `${progress}%`, transition: 'width 0.1s linear' }}
-          ></div>
-        </div>
+        
         <input
           type="text"
           value={inputValue}
@@ -95,7 +118,6 @@ const Game = () => {
           autoFocus
         />
         <div className="flex justify-around w-full mt-4 text-xl">
-          <p>Time: {startTime ? Math.round((Date.now() - startTime) / 1000) : 0}s</p>
           <p>WPM: {wpm}</p>
           <p>Accuracy: {accuracy}%</p>
         </div>

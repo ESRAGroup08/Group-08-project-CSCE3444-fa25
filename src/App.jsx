@@ -2,9 +2,6 @@ import React, { useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
 
-// This line now dynamically chooses the server URL.
-// In local development, import.meta.env.VITE_SERVER_URL will be undefined, so it defaults to localhost.
-// In production, it will use the URL from your environment variable.
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
 console.log(`Connecting to server at: ${SERVER_URL}`);
 

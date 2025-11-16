@@ -12,8 +12,10 @@ FROM node:18-slim
 WORKDIR /app
 COPY server/package.json server/package-lock.json ./server/
 WORKDIR /app/server
-RUN npm install --production
-COPY server/server.js ./
+RUN npm ci --only=production
 WORKDIR /app
+COPY server/ ./server/
 COPY --from=builder /app/dist ./dist
+ENV NODE_ENV=production
+EXPOSE 3000
 CMD ["node", "server/server.js"]

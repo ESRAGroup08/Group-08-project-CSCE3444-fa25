@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom'; // Added useParams
+import GameLeaderboard from './components/GameLeaderboard.jsx'; // Import GameLeaderboard
 
 const Game = () => {
   const navigate = useNavigate();
+  const { roomId } = useParams(); // Extract roomId from URL
   const [text, setText] = useState('Loading...');
   const [inputValue, setInputValue] = useState('');
   const [startTime, setStartTime] = useState(null);
@@ -99,6 +101,8 @@ const Game = () => {
           <p>WPM: {wpm}</p>
           <p>Accuracy: {accuracy}%</p>
         </div>
+        {/* Render GameLeaderboard */}
+        <GameLeaderboard roomId={roomId} />
       </div>
     </div>
   );

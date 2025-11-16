@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import io from "socket.io-client";
 
 let socket;
-export default function Leaderboard({ roomId }) {
+export default function GameLeaderboard({ roomId }) {
   const [board, setBoard] = useState([]);
 
   useEffect(() => {

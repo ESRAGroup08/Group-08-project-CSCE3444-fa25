@@ -4,6 +4,9 @@ const { Server } = require("socket.io");
 const path = require('path');
 const cors = require('cors');
 const mongoose = require('mongoose');
+const session = require('express-session');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 
 const app = express();
 const server = http.createServer(app);
@@ -23,6 +26,7 @@ mongoose.connect('mongodb://localhost:27017/typing_game')
 
 // --- Mongoose Schemas ---
 const userSchema = new mongoose.Schema({
+  googleId: { type: String, sparse: true, unique: true },
   username: { type: String, required: true, unique: true, trim: true },
   gamesPlayed: { type: Number, default: 0 },
   averageWPM: { type: Number, default: 0 },
@@ -35,6 +39,96 @@ const User = mongoose.model('User', userSchema);
 // --- Middleware ---
 app.use(cors());
 app.use(express.json()); // Middleware to parse JSON bodies
+
+// Sessions and Passport Configuration
+app.use(session({
+  secret: 'a_secret_key_for_sessions_replace_this', // Replace with a real secret in production
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false } // Set to true if using HTTPS
+}));
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Passport Google Strategy
+passport.use(new GoogleStrategy({
+    clientID: 'YOUR_GOOGLE_CLIENT_ID', // Replace with your Google Client ID
+    clientSecret: 'YOUR_GOOGLE_CLIENT_SECRET', // Replace with your Google Client Secret
+    callbackURL: "/auth/google/callback"
+  },
+  async (accessToken, refreshToken, profile, done) => {
+    try {
+      let user = await User.findOne({ googleId: profile.id });
+      if (user) {
+        return done(null, user);
+      } else {
+        // Create a new user
+        const newUser = new User({
+          googleId: profile.id,
+          username: profile.displayName || `User${profile.id}`
+        });
+        // Ensure username is unique
+        const existingUser = await User.findOne({ username: newUser.username });
+        if (existingUser) {
+          newUser.username = `User${profile.id.slice(-5)}`;
+        }
+        await newUser.save();
+        return done(null, newUser);
+      }
+    } catch (err) {
+      return done(err, null);
+    }
+  }
+));
+
+passport.serializeUser((user, done) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser(async (id, done) => {
+  try {
+    const user = await User.findById(id);
+    done(null, user);
+  } catch (err) {
+    done(err, null);
+  }
+});
+
+// --- Auth Routes ---
+app.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile'] })
+);
+
+app.get('/auth/google/callback', 
+  passport.authenticate('google', { failureRedirect: '/' }),
+  (req, res) => {
+    // On successful authentication, store username in a way the client can access
+    if (req.user) {
+      res.cookie('username', req.user.username, { httpOnly: false }); // Make accessible to client-side script
+    }
+    // Redirect to the main menu or a specific page
+    res.redirect('/#/menu');
+  }
+);
+
+app.get('/api/auth/status', (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json({ loggedIn: true, user: req.user });
+  } else {
+    res.json({ loggedIn: false });
+  }
+});
+
+app.get('/auth/logout', (req, res, next) => {
+  res.clearCookie('username');
+  req.logout(function(err) {
+    if (err) { return next(err); }
+    req.session.destroy(() => {
+      res.redirect('/');
+    });
+  });
+});
+
 
 // --- API Endpoints ---
 // Login or Register a user

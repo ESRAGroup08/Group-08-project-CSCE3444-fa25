@@ -10,6 +10,7 @@ import LeaderboardPage from './pages/LeaderboardPage.jsx';
 import Game from './Game.jsx'; // New import
 import ErrorDisplay from "./ErrorDisplay.jsx";
 import Profile from './Profile.jsx'; // Import the new Profile component
+import Friends from './Friends.jsx'; // Import the new Friends component
 import './index.css';
 
 const router = createHashRouter([
@@ -25,6 +26,7 @@ const router = createHashRouter([
       { path: '/leaderboard', element: <LeaderboardPage /> },
       { path: '/game/:roomId', element: <Game /> }, // New route
       { path: '/profile', element: <Profile /> }, // Add the new profile route
+      { path: '/friends', element: <Friends /> }, // Add the new friends route
     ],
   },
 ]);

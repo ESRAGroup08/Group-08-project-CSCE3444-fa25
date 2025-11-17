@@ -31,7 +31,10 @@ const userSchema = new mongoose.Schema({
   gamesPlayed: { type: Number, default: 0 },
   averageWPM: { type: Number, default: 0 },
   averageAccuracy: { type: Number, default: 0 },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  friendRequestsSent: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  friendRequestsReceived: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 });
 
 const User = mongoose.model('User', userSchema);
@@ -194,6 +197,126 @@ app.put('/api/users/:username', async (req, res) => {
     res.status(500).json({ message: 'Server error', error });
   }
 });
+
+// --- Friend System API Endpoints ---
+const friendRouter = express.Router();
+
+// Middleware to ensure user is authenticated
+const isAuthenticated = (req, res, next) => {
+  if (req.isAuthenticated()) {
+    return next();
+  }
+  res.status(401).json({ message: 'You must be logged in to perform this action.' });
+};
+
+friendRouter.use(isAuthenticated);
+
+// Get all friend data for the logged-in user
+friendRouter.get('/', async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id)
+      .populate('friends', 'username')
+      .populate('friendRequestsSent', 'username')
+      .populate('friendRequestsReceived', 'username');
+    res.json({
+      friends: user.friends,
+      sentRequests: user.friendRequestsSent,
+      receivedRequests: user.friendRequestsReceived
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error });
+  }
+});
+
+// Search for users
+friendRouter.get('/search', async (req, res) => {
+    const { query } = req.query;
+    if (!query) {
+        return res.status(400).json({ message: 'Search query is required.' });
+    }
+    try {
+        const users = await User.find({
+            username: { $regex: query, $options: 'i' },
+            _id: { $ne: req.user.id } // Exclude self
+        }).select('username');
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error });
+    }
+});
+
+
+// Send a friend request
+friendRouter.post('/request/:userId', async (req, res) => {
+  try {
+    const recipient = await User.findById(req.params.userId);
+    const sender = await User.findById(req.user.id);
+
+    if (!recipient) return res.status(404).json({ message: 'Recipient not found.' });
+    if (sender.id === recipient.id) return res.status(400).json({ message: 'You cannot send a friend request to yourself.' });
+    if (sender.friends.includes(recipient.id)) return res.status(400).json({ message: 'You are already friends.' });
+    if (sender.friendRequestsSent.includes(recipient.id)) return res.status(400).json({ message: 'Friend request already sent.' });
+
+    recipient.friendRequestsReceived.push(sender.id);
+    sender.friendRequestsSent.push(recipient.id);
+
+    await recipient.save();
+    await sender.save();
+
+    res.status(200).json({ message: 'Friend request sent.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error });
+  }
+});
+
+// Accept a friend request
+friendRouter.post('/accept/:userId', async (req, res) => {
+    try {
+        const sender = await User.findById(req.params.userId);
+        const recipient = await User.findById(req.user.id);
+
+        if (!sender) return res.status(404).json({ message: 'User not found.' });
+
+        // Atomically update both users
+        await User.updateOne({ _id: recipient.id }, {
+            $pull: { friendRequestsReceived: sender.id },
+            $addToSet: { friends: sender.id }
+        });
+        await User.updateOne({ _id: sender.id }, {
+            $pull: { friendRequestsSent: recipient.id },
+            $addToSet: { friends: recipient.id }
+        });
+
+        res.status(200).json({ message: 'Friend request accepted.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error });
+    }
+});
+
+// Reject or cancel a friend request / unfriend
+friendRouter.post('/reject/:userId', async (req, res) => {
+    try {
+        const otherUser = await User.findById(req.params.userId);
+        const currentUser = await User.findById(req.user.id);
+
+        if (!otherUser) return res.status(404).json({ message: 'User not found.' });
+
+        // Atomically update both users
+        await User.updateOne({ _id: currentUser.id }, {
+            $pull: { friends: otherUser.id, friendRequestsReceived: otherUser.id, friendRequestsSent: otherUser.id }
+        });
+        await User.updateOne({ _id: otherUser.id }, {
+            $pull: { friends: currentUser.id, friendRequestsReceived: currentUser.id, friendRequestsSent: currentUser.id }
+        });
+
+        res.status(200).json({ message: 'Action completed.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error });
+    }
+});
+
+
+app.use('/api/friends', friendRouter);
 
 
 // Serve the static files from the React app

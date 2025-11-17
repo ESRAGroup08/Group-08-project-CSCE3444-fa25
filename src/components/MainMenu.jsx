@@ -40,6 +40,11 @@ const MainMenu = () => {
               </Link>
             </li>
             <li>
+              <Link to="/friends" className="menu-button">
+                FRIENDS
+              </Link>
+            </li>
+            <li>
               <button className="menu-button secondary" onClick={handleQuit}>
                 QUIT
               </button>

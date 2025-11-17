@@ -9,6 +9,7 @@ import CustomLobby from './components/CustomLobby';
 import LeaderboardPage from './pages/LeaderboardPage.jsx';
 import Game from './Game.jsx'; // New import
 import ErrorDisplay from "./ErrorDisplay.jsx";
+import Profile from './Profile.jsx'; // Import the new Profile component
 import './index.css';
 
 const router = createHashRouter([
@@ -23,6 +24,7 @@ const router = createHashRouter([
       { path: '/lobby/custom', element: <CustomLobby /> },
       { path: '/leaderboard', element: <LeaderboardPage /> },
       { path: '/game/:roomId', element: <Game /> }, // New route
+      { path: '/profile', element: <Profile /> }, // Add the new profile route
     ],
   },
 ]);

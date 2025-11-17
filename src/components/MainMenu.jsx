@@ -1,6 +1,6 @@
 import React from 'react';
 import './MainMenu.css';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import Header from './Header.jsx';
 
 const MainMenu = () => {
@@ -33,6 +33,11 @@ const MainMenu = () => {
               <button className="menu-button" onClick={handleLeaderboards}>
                 LEADERBOARDS
               </button>
+            </li>
+            <li>
+              <Link to="/profile" className="menu-button">
+                PROFILE
+              </Link>
             </li>
             <li>
               <button className="menu-button secondary" onClick={handleQuit}>

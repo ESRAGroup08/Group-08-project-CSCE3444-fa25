@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import './components/MainMenu.css';
 
@@ -6,16 +6,24 @@ const Lobby = () => {
   const navigate = useNavigate();
   const { socket } = useOutletContext();
   const [isWaiting, setIsWaiting] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // --- Click handler for the "Casual" button ---
   const handleCasualClick = () => {
-    if (socket && socket.connected) {
-      console.log('CLIENT: Emitting "casual:enqueue" to the server.');
-      socket.emit("casual:enqueue");
-    } else {
+    if (!socket || !socket.connected) {
       console.error('CLIENT: Socket not connected. Cannot send event.');
       alert('Not connected to the server. Please refresh the page.');
+      return;
     }
+
+    if (!isInitialized) {
+      console.error('CLIENT: User not initialized. Cannot enqueue.');
+      alert('Please wait for initialization to complete.');
+      return;
+    }
+
+    console.log('CLIENT: Emitting "casual:enqueue" to the server.');
+    socket.emit("casual:enqueue");
   };
 
   const handleRanked = () => {
@@ -25,6 +33,47 @@ const Lobby = () => {
   const handleCustomPlay = () => {
     navigate('/lobby/custom');
   };
+
+  // --- Effect to initialize user on socket connection ---
+  useEffect(() => {
+    if (!socket) {
+      console.log('CLIENT: Lobby waiting for socket connection...');
+      return;
+    }
+
+    // Initialize user with the server
+    const initializeUser = () => {
+      // Generate a default username (in a real app, this would come from login/profile)
+      const username = `Player_${Math.random().toString(36).substring(2, 8)}`;
+      const stats = {
+        wpm: 0,
+        accuracy: 0,
+        winRate: 0,
+        gamesPlayed: 0
+      };
+
+      console.log('CLIENT: Emitting "user:init" to initialize session with username:', username);
+      socket.emit('user:init', { username, stats });
+      setIsInitialized(true);
+    };
+
+    // If socket is already connected, initialize immediately
+    if (socket.connected) {
+      initializeUser();
+    }
+
+    // Also listen for connection events in case socket reconnects
+    const onConnect = () => {
+      console.log('CLIENT: Socket connected, initializing user...');
+      initializeUser();
+    };
+
+    socket.on('connect', onConnect);
+
+    return () => {
+      socket.off('connect', onConnect);
+    };
+  }, [socket]);
 
   // --- Effect to manage socket event listeners ---
   useEffect(() => {

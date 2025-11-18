@@ -1,51 +1,68 @@
-import React, { useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
-import io from 'socket.io-client';
+import React, { useEffect, useState } from 'react';
+import { useOutletContext } from 'react-router-dom';
 
-// Prefer VITE_SERVER_URL, otherwise current origin
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || window.location.origin;
-console.log('Connecting to server at:', SERVER_URL);
+/**
+ * Example MainMenu component. Adapt to your project's structure.
+ * - Uses the socket from Outlet context (App passes it)
+ * - Disables the Casual button until username is set in localStorage and socket is connected
+ * - Shows user-facing hints when disabled
+ */
+export default function MainMenu() {
+  const { socket } = useOutletContext(); // expects App to pass { socket } via Outlet
+  const [username, setUsername] = useState(localStorage.getItem('username'));
+  const [connected, setConnected] = useState(socket ? socket.connected : false);
 
-const socket = io(SERVER_URL, {
-  transports: ['websocket'],
-  withCredentials: true,
-});
-
-// --- TEMP DEBUG: expose socket on window for manual testing ---
-window.__GT_SOCKET = socket;
-
-export default function App() {
   useEffect(() => {
-    socket.on('connect', () => {
-      console.log('Socket connected', socket.id);
-    });
-    socket.on('disconnect', (reason) => {
-      console.log('Socket disconnected:', reason);
-    });
-    socket.on('connect_error', (err) => {
-      console.error('Socket connect_error', err);
-    });
+    function onConnect() { setConnected(true); }
+    function onDisconnect() { setConnected(false); }
 
-    // Listen for matchmaking responses (example)
-    socket.on('casual:enqueued', () => {
-      console.log('CLIENT: received casual:enqueued from server');
-    });
-    socket.on('game:start', (payload) => {
-      console.log('CLIENT: received game:start', payload);
-    });
-    socket.on('error', (err) => {
-      console.warn('Socket error event:', err);
-    });
+    if (!socket) return;
+
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+
+    // In case username is set after mount (e.g., from Login), watch localStorage
+    function onStorage(e) {
+      if (e.key === 'username') {
+        setUsername(e.newValue);
+      }
+    }
+    window.addEventListener('storage', onStorage);
 
     return () => {
-      socket.off();
-      socket.close();
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+      window.removeEventListener('storage', onStorage);
     };
-  }, []);
+  }, [socket]);
+
+  function handleCasual() {
+    if (!socket || !socket.connected) {
+      console.warn('Casual: socket not connected');
+      return;
+    }
+    if (!username) {
+      console.warn('Casual: username not set');
+      return;
+    }
+    console.log('CLIENT: Emitting "casual:enqueue" to the server');
+    socket.emit('casual:enqueue');
+  }
 
   return (
-    <div className="App">
-      <Outlet context={{ socket }} />
+    <div className="main-menu">
+      <h2>Main Menu</h2>
+      <div>
+        <button
+          disabled={!username || !connected}
+          onClick={handleCasual}
+        >
+          Casual
+        </button>
+      </div>
+
+      {!username && <div className="hint">Please log in to play (set a username).</div>}
+      {username && !connected && <div className="hint">Connecting to server…</div>}
     </div>
   );
 }

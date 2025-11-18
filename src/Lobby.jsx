@@ -1,66 +1,75 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import './components/MainMenu.css';
 
 const Lobby = () => {
   const navigate = useNavigate();
   const { socket } = useOutletContext();
-  const [isWaiting, setIsWaiting] = useState(false);
+  const [waiting, setWaiting] = useState(false);
+  const [error, setError] = useState(''); // To display any errors from the server
 
-  // --- Click handler for the "Casual" button ---
+  // This function now emits the correct "casual:enqueue" event
   const handleCasualClick = () => {
-    if (socket && socket.connected) {
-      console.log('CLIENT: Emitting "casual:enqueue" to the server.');
+    if (socket) {
+      console.log('Client emitting "casual:enqueue"');
       socket.emit("casual:enqueue");
-    } else {
-      console.error('CLIENT: Socket not connected. Cannot send event.');
-      alert('Not connected to the server. Please refresh the page.');
+      setWaiting(true);
+      setError(''); // Clear previous errors
     }
   };
 
   const handleRanked = () => {
-    alert("This feature is coming soon!");
+    alert("Ranked matchmaking is not yet implemented.");
   };
 
   const handleCustomPlay = () => {
     navigate('/lobby/custom');
   };
 
-  // --- Effect to manage socket event listeners ---
   useEffect(() => {
-    // Don't set up listeners if the socket isn't ready
-    if (!socket) {
-      console.log('CLIENT: Lobby waiting for socket connection...');
-      return;
+    if (socket) {
+      // Correctly listen for the "game:start" event from the server
+      const handleGameStart = (data) => {
+        console.log("Client received 'game:start'", data);
+        setWaiting(false); // No longer waiting
+        // Navigate to the game room, passing players' info in the state
+        navigate(`/game/${data.gameType}/${data.roomId}`, { state: { players: data.players } });
+      };
+
+      // Listen for when we are successfully added to the queue
+      const handleEnqueued = () => {
+        console.log("Client received 'casual:enqueued', now waiting for a match.");
+        setWaiting(true);
+      };
+
+      // Listen for any errors from the server (like the "username not set" error)
+      const handleError = (errorData) => {
+        console.error("Server error:", errorData.message);
+        setError(errorData.message);
+        setWaiting(false); // Stop waiting if there was an error
+      };
+
+      // Set up listeners
+      socket.on('game:start', handleGameStart);
+      socket.on('casual:enqueued', handleEnqueued);
+      socket.on('error', handleError);
+
+      // Cleanup function to remove listeners when the component unmounts
+      return () => {
+        socket.off('game:start', handleGameStart);
+        socket.off('casual:enqueued', handleEnqueued);
+        socket.off('error', handleError);
+      };
     }
-
-    console.log('CLIENT: Lobby component mounted. Setting up listeners.');
-
-    // Define the function that will run when the server confirms we're in the queue.
-    const onEnqueued = () => {
-      console.log('CLIENT: Received "casual:enqueued" from server. Updating UI to show waiting status.');
-      setIsWaiting(true);
-    };
-
-    // Attach the listener
-    socket.on("casual:enqueued", onEnqueued);
-
-    // This is the cleanup function. It runs when the component is unmounted.
-    // It's crucial for preventing memory leaks and duplicate listeners.
-    return () => {
-      console.log('CLIENT: Lobby component unmounting. Cleaning up listeners.');
-      socket.off("casual:enqueued", onEnqueued);
-    };
-  }, [socket]); // This effect re-runs if the socket object ever changes.
+  }, [socket, navigate]);
 
   return (
     <div className="main-menu-container">
       <nav className="main-navigation">
-        {isWaiting ? (
+        {waiting ? (
           <div>
-            <h2 className="text-2xl font-bold">Waiting for opponent...</h2>
-            <p>The server is looking for another player.</p>
-            {/* Optional: Add a "Cancel" button that emits 'casual:dequeue' */}
+            <p className="waiting-text">Waiting for opponent...</p>
+            <p className="sub-text">The server is looking for another player.</p>
           </div>
         ) : (
           <ul>
@@ -86,6 +95,7 @@ const Lobby = () => {
             </li>
           </ul>
         )}
+        {error && <p style={{ color: 'red', marginTop: '1em' }}>Error: {error}</p>}
       </nav>
     </div>
   );

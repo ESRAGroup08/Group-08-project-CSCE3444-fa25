@@ -1,44 +1,34 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
-
-// --- Import all your page components ---
+import { createHashRouter, RouterProvider } from 'react-router-dom';
 import App from './App.jsx';
 import Login from './Login.jsx';
 import MainMenu from './components/MainMenu.jsx';
 import Lobby from './Lobby.jsx';
+import CustomLobby from './components/CustomLobby';
+import LeaderboardPage from './pages/LeaderboardPage.jsx';
 import Game from './Game.jsx';
+import ErrorDisplay from "./ErrorDisplay.jsx";
+import Profile from './Profile.jsx';
+import Friends from './Friends.jsx';
 import './index.css';
 
-const router = createBrowserRouter([
-  // Route 1: The Login Page (standalone, does not use the App layout)
+const router = createHashRouter([
   {
-    path: "/login",
-    element: <Login />,
-  },
-  // Route 2: The Main Application Layout
-  {
-    path: "/",
+    path: '/',
     element: <App />,
+    errorElement: <ErrorDisplay />,
     children: [
-      {
-        index: true,
-        element: <Login />,
-      },
-      {
-        path: "menu",
-        element: <MainMenu />,
-      },
-      {
-        path: "lobby",
-        element: <Lobby />,
-      },
-      // --- THIS IS THE MODIFIED ROUTE ---
-      // It now correctly expects a gameType and a roomId
-      {
-        path: "game/:gameType/:roomId",
-        element: <Game />,
-      },
+      // All child paths have been made relative (leading '/' removed)
+      { index: true, element: <Login /> },
+      { path: 'menu', element: <MainMenu /> },
+      { path: 'lobby', element: <Lobby /> },
+      { path: 'lobby/custom', element: <CustomLobby /> },
+      { path: 'leaderboard', element: <LeaderboardPage /> },
+      // This route was also fixed in our previous session
+      { path: 'game/:gameType/:roomId', element: <Game /> },
+      { path: 'profile', element: <Profile /> },
+      { path: 'friends', element: <Friends /> },
     ],
   },
 ]);

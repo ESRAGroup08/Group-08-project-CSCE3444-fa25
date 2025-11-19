@@ -6,8 +6,7 @@ import Login from './Login.jsx';
 import MainMenu from './components/MainMenu.jsx';
 import Lobby from './Lobby.jsx';
 import CustomLobby from './components/CustomLobby';
-// Corrected the import path for LeaderboardPage
-import LeaderboardPage from './LeaderboardPage.jsx'; 
+import Leaderboard from './Leaderboard.jsx'; 
 import Game from './Game.jsx';
 import ErrorDisplay from "./ErrorDisplay.jsx";
 import Profile from './Profile.jsx';
@@ -24,7 +23,8 @@ const router = createHashRouter([
       { path: 'menu', element: <MainMenu /> },
       { path: 'lobby', element: <Lobby /> },
       { path: 'lobby/custom', element: <CustomLobby /> },
-      { path: 'leaderboard', element: <LeaderboardPage /> },
+      // Use the correct component name here
+      { path: 'leaderboard', element: <Leaderboard /> },
       { path: 'game/:gameType/:roomId', element: <Game /> },
       { path: 'profile', element: <Profile /> },
       { path: 'friends', element: <Friends /> },

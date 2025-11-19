@@ -4,8 +4,8 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
 // --- Import all your page components ---
 import App from './App.jsx';
-import Login from './Login.jsx'; // Assuming this is your login page component
-import MainMenu from './components/MainMenu.jsx'; // Assuming this is your main menu
+import Login from './Login.jsx';
+import MainMenu from './components/MainMenu.jsx';
 import Lobby from './Lobby.jsx';
 import Game from './Game.jsx';
 import './index.css';
@@ -17,14 +17,10 @@ const router = createBrowserRouter([
     element: <Login />,
   },
   // Route 2: The Main Application Layout
-  // This wraps all pages that come AFTER login.
-  // It provides the socket connection via its <Outlet>.
   {
     path: "/",
     element: <App />,
     children: [
-      // When the user is at "/", show the MainMenu by default.
-      // You can change this to redirect to "/login" if the user isn't authenticated.
       {
         index: true,
         element: <Login />,
@@ -37,8 +33,10 @@ const router = createBrowserRouter([
         path: "lobby",
         element: <Lobby />,
       },
+      // --- THIS IS THE MODIFIED ROUTE ---
+      // It now correctly expects a gameType and a roomId
       {
-        path: "game/:roomId",
+        path: "game/:gameType/:roomId",
         element: <Game />,
       },
     ],

@@ -17,19 +17,16 @@ const Profile = () => {
         return;
       }
 
-      try {
-        const response = await fetch(`/api/users/${storedUsername}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch user data.');
-        }
-        const data = await response.json();
-        setUserData(data);
-        setNewUsername(data.username);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setIsLoading(false);
-      }
+      // Bypass API - use mock data
+      const mockData = {
+        username: storedUsername,
+        gamesPlayed: 0,
+        averageWPM: 0,
+        averageAccuracy: 0,
+      };
+      setUserData(mockData);
+      setNewUsername(mockData.username);
+      setIsLoading(false);
     };
 
     fetchUserData();

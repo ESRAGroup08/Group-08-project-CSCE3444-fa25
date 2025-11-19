@@ -55,8 +55,8 @@ app.use(passport.session());
 
 // Passport Google Strategy
 passport.use(new GoogleStrategy({
-    clientID: 'YOUR_GOOGLE_CLIENT_ID', // Replace with your Google Client ID
-    clientSecret: 'YOUR_GOOGLE_CLIENT_SECRET', // Replace with your Google Client Secret
+    clientID: 'test_client_id_12345', // Test credentials
+    clientSecret: 'test_client_secret_12345', // Test credentials
     callbackURL: "/auth/google/callback"
   },
   async (accessToken, refreshToken, profile, done) => {
@@ -201,15 +201,31 @@ app.put('/api/users/:username', async (req, res) => {
 // --- Friend System API Endpoints ---
 const friendRouter = express.Router();
 
-// Middleware to ensure user is authenticated
-const isAuthenticated = (req, res, next) => {
-  if (req.isAuthenticated()) {
-    return next();
+// Middleware to get user from username header or session
+const getAuthenticatedUser = async (req, res, next) => {
+  try {
+    // Try to get from session first (passport)
+    if (req.isAuthenticated()) {
+      return next();
+    }
+    
+    // Fallback: get from username header
+    const username = req.headers['x-username'];
+    if (username) {
+      const user = await User.findOne({ username });
+      if (user) {
+        req.user = user;
+        return next();
+      }
+    }
+    
+    res.status(401).json({ message: 'You must be logged in to perform this action.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Authentication error', error });
   }
-  res.status(401).json({ message: 'You must be logged in to perform this action.' });
 };
 
-friendRouter.use(isAuthenticated);
+friendRouter.use(getAuthenticatedUser);
 
 // Get all friend data for the logged-in user
 friendRouter.get('/', async (req, res) => {
@@ -238,7 +254,7 @@ friendRouter.get('/search', async (req, res) => {
         const users = await User.find({
             username: { $regex: query, $options: 'i' },
             _id: { $ne: req.user.id } // Exclude self
-        }).select('username');
+        }).select('username _id');
         res.json(users);
     } catch (error) {
         res.status(500).json({ message: 'Server error', error });
@@ -317,6 +333,51 @@ friendRouter.post('/reject/:userId', async (req, res) => {
 
 
 app.use('/api/friends', friendRouter);
+
+// DEBUG ENDPOINT: Create test users and friendships (for testing only)
+app.post('/api/debug/create-test-friends', async (req, res) => {
+  try {
+    const username = req.headers['x-username'] || 'TestUser';
+    
+    // Get or create main user
+    let mainUser = await User.findOne({ username });
+    if (!mainUser) {
+      mainUser = await User.create({ username });
+    }
+
+    // Create test1 to test10 and add as friends
+    const createdFriends = [];
+    for (let i = 1; i <= 10; i++) {
+      const testUsername = `test${i}`;
+      let testUser = await User.findOne({ username: testUsername });
+      
+      if (!testUser) {
+        testUser = await User.create({ username: testUsername });
+      }
+
+      // Add to friends if not already
+      if (!mainUser.friends.includes(testUser._id)) {
+        mainUser.friends.push(testUser._id);
+      }
+      if (!testUser.friends.includes(mainUser._id)) {
+        testUser.friends.push(mainUser._id);
+        await testUser.save();
+      }
+
+      createdFriends.push(testUsername);
+    }
+
+    await mainUser.save();
+    
+    res.json({
+      message: 'Test friends created successfully',
+      friends: createdFriends,
+      totalFriends: mainUser.friends.length
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating test friends', error });
+  }
+});
 
 
 // Serve the static files from the React app

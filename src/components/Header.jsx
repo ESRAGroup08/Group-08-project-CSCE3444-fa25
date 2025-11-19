@@ -1,13 +1,16 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import './Header.css';
 
 const Header = () => {
+  const navigate = useNavigate();
+
   const handleAddFriend = () => {
-    alert("Add Friend feature is not yet implemented.");
+    navigate('/friends');
   };
 
   const handleSettings = () => {
-    alert("Settings feature is not yet implemented.");
+    navigate('/settings');
   };
 
   return (

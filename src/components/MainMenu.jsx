@@ -45,6 +45,16 @@ const MainMenu = () => {
               </Link>
             </li>
             <li>
+              <Link to="/settings" className="menu-button">
+                SETTINGS
+              </Link>
+            </li>
+            <li>
+              <Link to="/daily-challenges" className="menu-button">
+                DAILY CHALLENGES
+              </Link>
+            </li>
+            <li>
               <button className="menu-button secondary" onClick={handleQuit}>
                 QUIT
               </button>

@@ -11,6 +11,8 @@ import Game from './Game.jsx'; // New import
 import ErrorDisplay from "./ErrorDisplay.jsx";
 import Profile from './Profile.jsx'; // Import the new Profile component
 import Friends from './Friends.jsx'; // Import the new Friends component
+import Settings from './Settings.jsx'; // Import the new Settings component
+import DailyChallenges from './DailyChallenges.jsx'; // Import the new Daily Challenges component
 import './index.css';
 
 const router = createHashRouter([
@@ -27,6 +29,8 @@ const router = createHashRouter([
       { path: '/game/:roomId', element: <Game /> }, // New route
       { path: '/profile', element: <Profile /> }, // Add the new profile route
       { path: '/friends', element: <Friends /> }, // Add the new friends route
+      { path: '/settings', element: <Settings /> }, // Add the new settings route
+      { path: '/daily-challenges', element: <DailyChallenges /> }, // Add the new daily challenges route
     ],
   },
 ]);

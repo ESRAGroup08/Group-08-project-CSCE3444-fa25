@@ -4,33 +4,25 @@ const { Server } = require("socket.io");
 const path = require('path');
 const cors = require('cors');
 
-// --- FIX: Import your local game logic modules ---
+// --- Import your local game logic modules ---
 const casualMatchmaking = require('./casualMatchmaking');
 const privateLobby = require('./privateLobby');
 const ranking = require('./ranking');
 // ----------------------------------------------------
 
-
-
 // --- Define allowed origins ---
-// In production, you'll set CLIENT_URL in Render's environment variables.
-// In local development, it defaults to the Vite server URL.
 const allowedOrigins = [
   process.env.CLIENT_URL || "http://localhost:5173",
-  // You can add more origins here if needed
 ];
 
 const app = express();
-
 app.use(cors({
   origin: function (origin, callback) {
-    // allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
     }
-    return callback(null, true);
   },
   credentials: true
 }));
@@ -45,48 +37,42 @@ const io = new Server(server, {
   }
 });
 
-
 const PORT = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname, '../dist')));
 
-// Helper function to start a game (assuming this is defined or you can add it)
-function startGame(socket1, socket2, gameType = 'casual') {
-  const roomId = `game_${socket1.id}_${socket2.id}`;
-  const players = [
-    { username: socket1.data.username, stats: socket1.data.stats, socketId: socket1.id },
-    { username: socket2.data.username, stats: socket2.data.stats, socketId: socket2.id }
-  ];
+// Helper function to start a game for multiple players
+function startGame(sockets, gameType, roomId) {
+  const players = sockets.map(socket => ({
+    username: socket.data.username,
+    stats: socket.data.stats,
+    socketId: socket.id
+  }));
 
-  socket1.join(roomId);
-  socket2.join(roomId);
+  sockets.forEach(socket => socket.join(roomId));
 
-  console.log(`Starting ${gameType} match in room ${roomId} between ${players[0].username} and ${players[1].username}`);
+  console.log(`Starting ${gameType} match in room ${roomId} between players: ${players.map(p => p.username).join(', ')}`);
   io.to(roomId).emit('game:start', { roomId, players, gameType });
 }
 
-
 io.on('connection', (socket) => {
-  console.log(`A user connected: ${socket.id}. Transport: ${socket.conn.transport.name}`);
+  console.log(`A user connected: ${socket.id}.`);
 
   socket.on('user:init', ({ username, stats }) => {
     socket.data.username = username;
     socket.data.stats = stats || {};
-    // Now 'ranking' is defined and this will work
     ranking.ensurePlayer(username, stats);
     console.log(`User ${username} (${socket.id}) initialized.`);
   });
   
+  // --- Casual Matchmaking Handlers ---
   socket.on('casual:enqueue', () => {
     if (!socket.data.username) {
       return socket.emit('error', { message: 'Username not set. Please initialize first.' });
     }
     console.log(`Player ${socket.data.username} is looking for a casual match.`);
     
-    // This will now work
     const skillScore = ranking.computeSkillScore(socket.data.stats);
-
-    // And this will also work
     const result = casualMatchmaking.enqueue({
       socket,
       username: socket.data.username,
@@ -97,13 +83,86 @@ io.on('connection', (socket) => {
     if (result.matched) {
       const opponentSocket = result.opponent.socket;
       console.log(`Match found: ${result.self.username} vs ${result.opponent.username}`);
-      startGame(socket, opponentSocket, 'casual');
+      const roomId = `game_casual_${result.self.id}_${result.opponent.id}`;
+      startGame([socket, opponentSocket], 'casual', roomId);
     } else {
       socket.emit('casual:enqueued');
       console.log(`Player ${socket.data.username} added to the queue.`);
     }
   });
 
+  // --- Private Lobby Handlers ---
+  socket.on('lobby:create', () => {
+    if (!socket.data.username) {
+      return socket.emit('error', { message: 'Cannot create lobby: User not initialized.' });
+    }
+    try {
+      const { roomId, roomState } = privateLobby.createRoom({
+        hostUsername: socket.data.username,
+        socket: socket,
+        stats: socket.data.stats,
+      });
+      socket.join(roomId);
+      console.log(`User ${socket.data.username} created and joined lobby ${roomId}`);
+      socket.emit('lobby:state', { roomId, ...roomState });
+    } catch (error) {
+      socket.emit('error', { message: `Error creating lobby: ${error.message}` });
+    }
+  });
+
+  socket.on('lobby:join', ({ roomId }) => {
+    if (!socket.data.username) {
+      return socket.emit('error', { message: 'Cannot join lobby: User not initialized.' });
+    }
+    try {
+      const { roomState } = privateLobby.joinRoom({
+        roomId,
+        username: socket.data.username,
+        socket: socket,
+        stats: socket.data.stats,
+      });
+      socket.join(roomId);
+      console.log(`User ${socket.data.username} joined lobby ${roomId}`);
+      io.to(roomId).emit('lobby:state', { roomId, ...roomState });
+    } catch (error) {
+      socket.emit('error', { message: `Error joining lobby: ${error.message}` });
+    }
+  });
+
+  socket.on('lobby:setReady', ({ roomId, ready }) => {
+    if (!socket.data.username) {
+      return socket.emit('error', { message: 'Cannot set ready status: User not initialized.' });
+    }
+    try {
+      const { roomState } = privateLobby.setReady(roomId, socket.data.username, ready);
+      io.to(roomId).emit('lobby:state', { roomId, ...roomState });
+
+      if (roomState.players.length > 1 && privateLobby.allReady(roomId)) {
+        console.log(`All players in lobby ${roomId} are ready. Starting game.`);
+        const room = privateLobby.getRoomState(roomId);
+        const roomSockets = Array.from(privateLobby._rooms.get(roomId).players.values()).map(p => p.socket);
+        startGame(roomSockets, 'custom', roomId);
+      }
+    } catch (error) {
+      socket.emit('error', { message: `Error setting ready status: ${error.message}` });
+    }
+  });
+    
+  socket.on('lobby:leave', ({ roomId }) => {
+    try {
+        const username = socket.data.username;
+        const result = privateLobby.leaveRoom(roomId, username);
+        socket.leave(roomId);
+        console.log(`User ${username} left lobby ${roomId}`);
+        if (result) {
+            io.to(roomId).emit('lobby:state', { roomId, ...result.roomState });
+        }
+    } catch (error) {
+        console.error(`Error leaving lobby ${roomId}: ${error.message}`);
+    }
+  });
+
+  // --- General Game and Disconnect Handlers ---
   socket.on('game:progress', ({ roomId, progress }) => {
     socket.to(roomId).emit('game:progressUpdate', { socketId: socket.id, progress });
   });
@@ -112,7 +171,6 @@ io.on('connection', (socket) => {
     console.log('user disconnected:', socket.id);
     casualMatchmaking.removeBySocket(socket);
     const affectedRooms = privateLobby.removePlayerBySocket(socket);
-
     affectedRooms.forEach(affected => {
       if (affected.roomState) {
         io.to(affected.roomId).emit('lobby:state', affected.roomState);

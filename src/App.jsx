@@ -3,7 +3,8 @@ import { Outlet } from 'react-router-dom';
 import io from 'socket.io-client';
 
 // Prefer VITE_SERVER_URL, otherwise current origin
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || window.location.origin;
+// For now, let's hardcode the production URL to ensure it works.
+const SERVER_URL = 'https://group-08-project.onrender.com';
 console.log('Connecting to server at:', SERVER_URL);
 
 const socket = io(SERVER_URL, {

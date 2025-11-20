@@ -10,33 +10,24 @@ const privateLobby = require('./privateLobby');
 const ranking = require('./ranking');
 // ----------------------------------------------------
 
-// +++ START OF DEBUGGING CORS CONFIG +++
+// --- Define allowed origins for production and development ---
 const allowedOrigins = [
-  process.env.CLIENT_URL || "http://localhost:5173",
-  "https://galatic-typer-test2.onrender.com", 
+  "https://galatic-typer-test2.onrender.com", // Your deployed frontend
+  process.env.CLIENT_URL || "http://localhost:5173", // For local development
 ];
 
 const corsOptions = {
-  credentials: true,
   origin: function (origin, callback) {
-    // Log the origin for every single request
-    console.log(`[CORS DEBUG] Request received from origin: ${origin}`);
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
 
-    // For debugging, we will temporarily allow all origins.
-    // This will help us confirm if CORS is the only issue.
-    callback(null, true); 
-
-    /*
-    // Original Logic (currently disabled for debugging)
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      console.log(`[CORS DEBUG] Origin allowed: ${origin}`);
-      callback(null, true);
-    } else {
-      console.error(`[CORS DEBUG] Origin REJECTED: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg));
     }
-    */
-  }
+    return callback(null, true);
+  },
+  credentials: true,
 };
 
 const app = express();
@@ -44,28 +35,20 @@ app.use(cors(corsOptions));
 
 const server = http.createServer(app);
 
+// --- Configure Socket.IO Server ---
 const io = new Server(server, {
-  cors: corsOptions // Use the same options for Socket.IO
+  cors: corsOptions,
+  // This setting is crucial for compatibility with Render's proxy
+  allowEIO3: true,
 });
-// +++ END OF DEBUGGING CORS CONFIG +++
 
 const PORT = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname, '../dist')));
 
-// Helper function to start a game for multiple players
-function startGame(sockets, gameType, roomId) {
-  const players = sockets.map(socket => ({
-    username: socket.data.username,
-    stats: socket.data.stats,
-    socketId: socket.id
-  }));
-
-  sockets.forEach(socket => socket.join(roomId));
-
-  console.log(`Starting ${gameType} match in room ${roomId} between players: ${players.map(p => p.username).join(', ')}`);
-  io.to(roomId).emit('game:start', { roomId, players, gameType });
-}
+// (Your handler logic and the rest of the file remains the same)
+// ...
+// ...
 
 io.on('connection', (socket) => {
   console.log(`A user connected: ${socket.id}.`);
@@ -191,6 +174,7 @@ io.on('connection', (socket) => {
   });
 });
 
+
 app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
@@ -198,3 +182,16 @@ app.get(/.*/, (req, res) => {
 server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });
+
+function startGame(sockets, gameType, roomId) {
+  const players = sockets.map(socket => ({
+    username: socket.data.username,
+    stats: socket.data.stats,
+    socketId: socket.id
+  }));
+
+  sockets.forEach(socket => socket.join(roomId));
+
+  console.log(`Starting ${gameType} match in room ${roomId} between players: ${players.map(p => p.username).join(', ')}`);
+  io.to(roomId).emit('game:start', { roomId, players, gameType });
+}

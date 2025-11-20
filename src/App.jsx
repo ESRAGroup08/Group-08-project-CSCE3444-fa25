@@ -1,53 +1,51 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import io from 'socket.io-client';
 
-const SERVER_URL = 'https://group-08-project.onrender.com';
+// Prefer VITE_SERVER_URL, otherwise current origin
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || window.location.origin;
 console.log('Connecting to server at:', SERVER_URL);
 
-// Simplified connection for better compatibility
 const socket = io(SERVER_URL, {
   transports: ['websocket'],
+  withCredentials: true,
 });
 
+// --- TEMP DEBUG: expose socket on window for manual testing ---
 window.__GT_SOCKET = socket;
 
 export default function App() {
-  // Add state for the current user
-  const [user, setUser] = useState(null);
-
   useEffect(() => {
-    // A function to initialize the user and socket
-    const initUser = (userData) => {
-      setUser(userData);
-      socket.emit('user:init', { username: userData.username, stats: userData.stats });
-    };
+    socket.on('connect', () => {
+      console.log('Socket connected', socket.id);
+    });
+    socket.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+    });
+    socket.on('connect_error', (err) => {
+      console.error('Socket connect_error', err);
+    });
 
-    // Example: try to load user from localStorage on startup
-    const savedUser = localStorage.getItem('galactic_typer_user');
-    if (savedUser) {
-      initUser(JSON.parse(savedUser));
-    }
-    
-    // Pass the initUser function down to be used by the Login component
-    // This part is a conceptual fix; the Login component would need to be updated to use this.
-    // For now, we will pass both socket and user in the context.
-
-    socket.on('connect', () => console.log('Socket connected', socket.id));
-    socket.on('disconnect', (reason) => console.log('Socket disconnected:', reason));
-    socket.on('connect_error', (err) => console.error('Socket connect_error', err));
-    
-    // ... other socket listeners
+    // Listen for matchmaking responses (example)
+    socket.on('casual:enqueued', () => {
+      console.log('CLIENT: received casual:enqueued from server');
+    });
+    socket.on('game:start', (payload) => {
+      console.log('CLIENT: received game:start', payload);
+    });
+    socket.on('error', (err) => {
+      console.warn('Socket error event:', err);
+    });
 
     return () => {
       socket.off();
+      socket.close();
     };
   }, []);
 
-  // Pass both socket and user down to child routes
   return (
     <div className="App">
-      <Outlet context={{ socket, user, setUser }} />
+      <Outlet context={{ socket }} />
     </div>
   );
 }

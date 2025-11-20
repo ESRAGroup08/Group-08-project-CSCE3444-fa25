@@ -13,6 +13,7 @@ const ranking = require('./ranking');
 // --- Define allowed origins for production and development ---
 const allowedOrigins = [
   "https://galatic-typer-test2.onrender.com", // Your deployed frontend
+  "https://group-08-project.onrender.com", // Deployed frontend URL
   process.env.CLIENT_URL || "http://localhost:5173", // For local development
 ];
 

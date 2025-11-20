@@ -13,7 +13,7 @@ const ranking = require('./ranking');
 // --- Define allowed origins ---
 const allowedOrigins = [
   process.env.CLIENT_URL || "http://localhost:5173",
-  "https://group-08-project-csce3444-fa25.onrender.com", // The URL of your deployed frontend
+  "https://galatic-typer-test2.onrender.com", // THIS IS THE CORRECTED URL
 ];
 
 const app = express();

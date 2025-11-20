@@ -4,33 +4,34 @@ import './MainMenu.css'; // Assuming this has your menu-button styles
 
 const CustomLobby = () => {
   const navigate = useNavigate();
-  const { socket } = useOutletContext();
+  // Get both `socket` and `user` from the context provided by App.jsx
+  const { socket, user } = useOutletContext(); 
   const [roomCode, setRoomCode] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [players, setPlayers] = useState([]);
   const [isHost, setIsHost] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState('');
-  const [currentUser, setCurrentUser] = useState('');
+
+  // The current user's username is now reliably passed via context
+  const currentUser = user?.username;
 
   // This effect handles all incoming socket events for the lobby
   useEffect(() => {
     if (!socket) return;
     
-    // Store the current user's username from the socket data if available
-    if (socket.data.username) {
-        setCurrentUser(socket.data.username);
-    }
-
     const handleLobbyState = (data) => {
       console.log('CLIENT: Received lobby state:', data);
       setError(''); // Clear errors on a successful state update
       setRoomCode(data.roomId);
       setPlayers(data.players);
       
-      const self = data.players.find(p => p.username === socket.data.username);
-      if (self) {
-        setIsHost(data.host === self.username);
+      // Use the reliable `currentUser` variable from context
+      if (currentUser) {
+        const self = data.players.find(p => p.username === currentUser);
+        if (self) {
+          setIsHost(data.host === self.username);
+        }
       }
     };
 
@@ -47,7 +48,7 @@ const CustomLobby = () => {
       socket.off('lobby:state', handleLobbyState);
       socket.off('error', handleError);
     };
-  }, [socket]);
+  }, [socket, currentUser]); // Add currentUser to dependency array
 
   const handleCreateRoom = () => {
     socket.emit('lobby:create');
@@ -128,6 +129,7 @@ const CustomLobby = () => {
       <ul className="w-full max-w-md bg-gray-800 p-4 rounded-lg">
         {players.map((player) => (
           <li key={player.username} className={`flex justify-between items-center p-2 rounded-md ${player.ready ? 'bg-green-800/50' : ''}`}>
+            {/* Use the reliable `currentUser` variable here as well */}
             <span>{player.username} {player.username === currentUser ? '(You)' : ''}</span>
             <span className={`font-bold ${player.ready ? 'text-green-400' : 'text-yellow-400'}`}>
               {player.ready ? 'Ready' : 'Not Ready'}

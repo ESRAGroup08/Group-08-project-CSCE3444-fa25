@@ -2,7 +2,8 @@ import React from 'react';
 import { Outlet } from 'react-router-dom';
 import io from 'socket.io-client';
 
-const socket = io('/');
+const SERVER_URL = import.meta.env.PROD ? '/' : 'http://localhost:3000';
+const socket = io(SERVER_URL);
 
 function App() {
   return (

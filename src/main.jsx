@@ -10,7 +10,6 @@ import Leaderboard from './Leaderboard.jsx';
 import Game from './Game.jsx';
 import ErrorDisplay from "./ErrorDisplay.jsx";
 import Profile from './Profile.jsx';
-//import Friends from './Friends.jsx';
 import './index.css';
 
 const router = createHashRouter([
@@ -27,7 +26,6 @@ const router = createHashRouter([
       { path: 'leaderboard', element: <Leaderboard /> },
       { path: 'game/:gameType/:roomId', element: <Game /> },
       { path: 'profile', element: <Profile /> },
-      { path: 'friends', element: <Friends /> },
     ],
   },
 ]);

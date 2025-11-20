@@ -10,33 +10,44 @@ const privateLobby = require('./privateLobby');
 const ranking = require('./ranking');
 // ----------------------------------------------------
 
-// --- Define allowed origins ---
+// +++ START OF DEBUGGING CORS CONFIG +++
 const allowedOrigins = [
   process.env.CLIENT_URL || "http://localhost:5173",
-  "https://galatic-typer-test2.onrender.com", // THIS IS THE CORRECTED URL
+  "https://galatic-typer-test2.onrender.com", 
 ];
 
-const app = express();
-app.use(cors({
+const corsOptions = {
+  credentials: true,
   origin: function (origin, callback) {
+    // Log the origin for every single request
+    console.log(`[CORS DEBUG] Request received from origin: ${origin}`);
+
+    // For debugging, we will temporarily allow all origins.
+    // This will help us confirm if CORS is the only issue.
+    callback(null, true); 
+
+    /*
+    // Original Logic (currently disabled for debugging)
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      console.log(`[CORS DEBUG] Origin allowed: ${origin}`);
       callback(null, true);
     } else {
+      console.error(`[CORS DEBUG] Origin REJECTED: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
-  },
-  credentials: true
-}));
+    */
+  }
+};
+
+const app = express();
+app.use(cors(corsOptions));
 
 const server = http.createServer(app);
 
 const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ["GET", "POST"],
-    credentials: true
-  }
+  cors: corsOptions // Use the same options for Socket.IO
 });
+// +++ END OF DEBUGGING CORS CONFIG +++
 
 const PORT = process.env.PORT || 3000;
 

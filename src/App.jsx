@@ -2,7 +2,11 @@ import React from 'react';
 import { Outlet } from 'react-router-dom';
 import io from 'socket.io-client';
 
-const socket = io('/');
+// Use an environment variable to determine the server URL.
+// Vite exposes these variables on the `import.meta.env` object.
+const SERVER_URL = import.meta.env.VITE_SERVER_URL;
+
+const socket = io(SERVER_URL);
 
 function App() {
   return (

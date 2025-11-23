@@ -10,6 +10,7 @@ const passport = require('passport');
 const { randomUUID } = require('crypto');
 const casualMatchmaking = require('./casualMatchmaking');
 const ranking = require('./ranking');
+const privateLobby = require('./privateLobby'); // Import the privateLobby module
 
 // A simple in-memory store for game states
 const gameRooms = new Map();
@@ -125,6 +126,65 @@ io.on('connection', (socket) => {
         }
     });
 
+    // --- CUSTOM LOBBY LOGIC ---
+    socket.on('create_lobby', ({ username }) => {
+        try {
+            const { roomId, roomState } = privateLobby.createRoom({ hostUsername: username, socket });
+            socket.join(roomId);
+            console.log(`[Lobby] ${username} created lobby ${roomId}`);
+            socket.emit('lobby_state_update', { roomId, ...roomState });
+        } catch (error) { socket.emit('lobby_error', { message: error.message }); }
+    });
+
+    socket.on('join_lobby', ({ username, roomId }) => {
+        try {
+            const { roomState } = privateLobby.joinRoom({ roomId, username, socket });
+            socket.join(roomId);
+
+            console.log(`[Lobby] ${username} joined lobby ${roomId}`);
+            io.to(roomId).emit('lobby_state_update', { roomId, ...roomState });
+        } catch (error) { socket.emit('lobby_error', { message: error.message }); }
+    });
+
+    socket.on('set_ready', ({ roomId, username, isReady }) => {
+        try {
+            const { roomState } = privateLobby.setReady(roomId, username, isReady);
+            console.log(`[Lobby] ${username} in ${roomId} set ready to ${isReady}`);
+            io.to(roomId).emit('lobby_state_update', { roomId, ...roomState });
+        } catch (error) { socket.emit('lobby_error', { message: error.message }); }
+    });
+
+    socket.on('start_game', ({ roomId, username }) => {
+    try {
+        // Use the public lobby info for checks
+        const publicLobby = privateLobby.getLobbyByRoomId(roomId);
+        if (!publicLobby) throw new Error("Lobby not found.");
+        if (publicLobby.host !== username) throw new Error("Only the host can start the game.");
+        if (!privateLobby.allReady(roomId)) throw new Error("Not all players are ready.");
+
+        console.log(`[Lobby] Starting game in lobby ${roomId}`);
+        
+        const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
+        const playersState = {};
+        
+        // Get the full internal player data from the lobby
+        const playersMap = publicLobby.players;
+        
+        // This will now work because playersMap is a Map object
+        playersMap.forEach(player => {
+            playersState[player.socket.id] = { username: player.username, progress: 0, wpm: 0, finished: false };
+        });
+        
+        gameRooms.set(roomId, { roomId, text, players: playersState });
+        
+        io.to(roomId).emit('game_starting', { roomId, players: playersState, text });
+
+    } catch (error) {
+        console.error(`[Lobby] Error starting game in ${roomId}:`, error.message);
+        socket.emit('lobby_error', { message: error.message }); 
+    }
+});
+
     // Handle player progress
     socket.on('player_progress', ({ roomId, progress, wpm }) => {
         const room = gameRooms.get(roomId);
@@ -155,10 +215,13 @@ io.on('connection', (socket) => {
     // Handle disconnects
     socket.on('disconnect', () => {
         console.log('user disconnected:', socket.id);
-        const removedPlayer = casualMatchmaking.removeBySocket(socket);
-        if (removedPlayer) {
-            console.log(`Removed ${removedPlayer.username} from the casual queue.`);
-        }
+        casualMatchmaking.removeBySocket(socket);
+        const affectedLobbies = privateLobby.removePlayerBySocket(socket);
+        affectedLobbies.forEach(lobby => {
+            if (lobby.roomState) {
+                io.to(lobby.roomId).emit('lobby_state_update', { roomId: lobby.roomId, ...lobby.roomState });
+            }
+        });
     });
 });
 

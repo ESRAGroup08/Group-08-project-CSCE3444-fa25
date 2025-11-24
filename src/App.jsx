@@ -12,8 +12,8 @@ console.log("--- App.jsx is loading ---");
 console.log(`Attempting to connect to WebSocket server at: ${SERVER_URL}`);
 
 // Initialize the socket connection
-const socket = io(SERVER_URL, {
-  transports: ['websocket', 'polling'] // Good practice for reliability
+const socket = io({
+  transports: ['websocket', 'polling']
 });
 
 function App() {

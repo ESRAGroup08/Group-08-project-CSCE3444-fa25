@@ -13,9 +13,6 @@ const ranking = require('./ranking');
 const privateLobby = require('./privateLobby'); // Import the privateLobby module
 
 
-const rankedQueue = []; // Placeholder for ranked matchmaking queue
-// A simple in-memory store for game states
-const gameRooms = new Map();
 
 const app = express();
 const server = http.createServer(app);
@@ -61,7 +58,7 @@ const User = mongoose.model('User', userSchema);
 */
 
 // --- Middleware ---
-app.use(cors());
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 /*
@@ -107,6 +104,10 @@ const TEXT_SNIPPETS = [
     'A journey of a thousand miles begins with a single step. To be or not to be, that is the question.',
     'Supercalifragilisticexpialidocious pneumatic pseudocode exemplifies paradoxical idiosyncrasies.',
 ];
+
+const gameRooms = new Map();
+const rankedQueue = []; // Placeholder for ranked matchmaking queue
+// A simple in-memory store for game states
 
 io.on('connection', (socket) => {
     console.log('a user connected:', socket.id);
@@ -301,10 +302,11 @@ io.on('connection', (socket) => {
 });
 
 // Final catch-all to serve the React app
-app.get(/.*/, (req, res) => {
+app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
+// --- 7. Start the Server ---
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server listening on 0.0.0.0:${PORT}`);
+  console.log(`🚀 Server listening on 0.0.0.0:${PORT}`);
 });

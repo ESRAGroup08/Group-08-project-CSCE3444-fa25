@@ -41,9 +41,7 @@ const io = new Server(server, {
 });
 // --- END OF FIX ---
 
-const PORT = process.env.PORT || 3000;
 
-console.log("NOTE: MongoDB connection and all DB-related APIs are bypassed for development.");
 
 /* --- ALL DATABASE AND AUTHENTICATION CODE BYPASSED FOR DEVELOPMENT --- */
 /*
@@ -60,7 +58,8 @@ const User = mongoose.model('User', userSchema);
 // --- Middleware ---
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
-
+// Serve the static files from the React app
+app.use(express.static(path.join(__dirname, '../dist')));
 /*
 // Sessions and Passport Configuration - Bypassed
 app.use(session({
@@ -94,9 +93,9 @@ app.use('/api/friends', friendRouter);
 */
 /* --- END OF BYPASSED CODE --- */
 
+const PORT = process.env.PORT || 3000;
+console.log("NOTE: MongoDB connection and all DB-related APIs are bypassed for development.");
 
-// Serve the static files from the React app
-app.use(express.static(path.join(__dirname, '../dist')));
 
 // --- Socket.IO Logic ---
 const TEXT_SNIPPETS = [

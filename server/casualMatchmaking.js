@@ -55,6 +55,7 @@ function computeDynamicThreshold(base, expandPerSecond, waitedSec, waitedOtherSe
 // Returns:
 //  - If a match found: { matched: true, opponent: opponentEntry, self: entry }
 //  - If no match: { matched: false, entry: enqueuedEntry }
+// Public: enqueue a player and try to find a match immediately.
 function enqueue(entryIn = {}, opts = {}) {
   const options = { ...DEFAULT_OPTIONS, ...opts };
   if (!entryIn || !entryIn.socket || !entryIn.username) {
@@ -75,6 +76,9 @@ function enqueue(entryIn = {}, opts = {}) {
   // Clean stale entries first
   purgeStale(options.maxQueueTimeSec);
 
+ 
+
+
   // Attempt to find an opponent
   for (let i = 0; i < QUEUE.length; i++) {
     const other = QUEUE[i];
@@ -85,21 +89,33 @@ function enqueue(entryIn = {}, opts = {}) {
     if (entry.lastPairedAt && (now - entry.lastPairedAt) < options.pairCooldownMs) continue;
 
     const waitedOther = (now - other.enqueuedAt) / 1000;
-    const waitedSelf = (now - entry.enqueuedAt) / 1000;
+    // We can consider the new player's wait time as 0, which is what's happening implicitly.
+    const waitedSelf = 0; 
     const dynamicThreshold = computeDynamicThreshold(options.thresholdBase, options.expandPerSecond, waitedSelf, waitedOther, options.maxThreshold);
+    
+    const skillDifference = Math.abs(other.skillScore - entry.skillScore);
 
-    if (Math.abs(other.skillScore - entry.skillScore) <= dynamicThreshold) {
+    
+    if (skillDifference <= dynamicThreshold) {
       // remove opponent from queue
       QUEUE.splice(i, 1);
       // set lastPairedAt to avoid immediate rematching
       other.lastPairedAt = now;
       entry.lastPairedAt = now;
+      
+  
+      
       return { matched: true, opponent: other, self: entry };
     }
   }
 
   // No match: push to queue
   QUEUE.push(entry);
+
+  // --- DEBUG LOGGING ---
+  console.log(`[MM] No match found for ${entry.username}. Added to queue.`);
+  // --- END DEBUG LOGGING ---
+  
   return { matched: false, entry };
 }
 

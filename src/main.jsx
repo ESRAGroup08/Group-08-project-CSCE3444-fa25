@@ -5,12 +5,12 @@ import App from './App.jsx';
 import Login from './Login.jsx';
 import MainMenu from './components/MainMenu.jsx';
 import Lobby from './Lobby.jsx';
-import CustomLobby from './components/CustomLobby';
 import LeaderboardPage from './pages/LeaderboardPage.jsx';
 import Game from './Game.jsx'; // New import
 import ErrorDisplay from "./ErrorDisplay.jsx";
 import Profile from './Profile.jsx'; // Import the new Profile component
 import Friends from './Friends.jsx'; // Import the new Friends component
+import CustomLobby from './components/CustomLobby.jsx';
 import './index.css';
 
 const router = createHashRouter([

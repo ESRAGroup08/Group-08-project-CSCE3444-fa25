@@ -1,19 +1,19 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Crown, Rocket } from 'lucide-react';
+import { Crown } from 'lucide-react';
 
-const ResultsModal = ({ players, onPlayAgain }) => {
+const ResultsModal = ({ players }) => {
   const navigate = useNavigate();
 
   if (!players) return null;
 
-  // Convert players map to an array and sort by who finished and their WPM
+  // Convert players map to an array and sort to determine the winner
   const sortedPlayers = Object.values(players)
     .sort((a, b) => {
-      if (a.finished && !b.finished) return -1; // Finished players come first
+      if (a.finished && !b.finished) return -1;
       if (!a.finished && b.finished) return 1;
-      if (a.finished && b.finished) return b.wpm - a.wpm; // Higher WPM is better
-      return b.progress - a.progress; // Higher progress is better for those who didn't finish
+      if (a.finished && b.finished) return b.wpm - a.wpm;
+      return b.progress - a.progress;
     });
 
   const winner = sortedPlayers[0];
@@ -38,7 +38,18 @@ const ResultsModal = ({ players, onPlayAgain }) => {
               </div>
               <div className="text-right">
                 <div className="font-bold text-cyan-300">{player.wpm} WPM</div>
-                <div className="text-sm text-slate-400">{player.accuracy || 0}% Accuracy</div>
+                
+                {/* --- NEW: Conditional display for Rank or Accuracy --- */}
+                {player.newRank !== undefined ? (
+                  <div className="text-sm font-bold">
+                    <span className="text-slate-400">{player.rank} → </span>
+                    <span className={player.newRank > player.rank ? "text-green-400" : "text-red-400"}>
+                      {player.newRank}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-sm text-slate-400">{player.accuracy || 0}% Accuracy</div>
+                )}
               </div>
             </div>
           ))}

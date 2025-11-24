@@ -19,12 +19,30 @@ const gameRooms = new Map();
 
 const app = express();
 const server = http.createServer(app);
+
+// --- THIS IS THE FIX ---
+// Define allowed origins for CORS
+const allowedOrigins = [
+  "http://localhost:5173", // Your local development environment
+  "https://group-08-project-csce3444-fa25.onrender.com", // Your main Render production URL
+  "https://group-08-multi-feat-preview.onrender.com" // Your preview Render URL
+];
+
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.indexOf(origin) === -1) {
+        const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+        return callback(new Error(msg), false);
+      }
+      return callback(null, true);
+    },
     methods: ["GET", "POST"]
   }
 });
+// --- END OF FIX ---
 
 const PORT = process.env.PORT || 3000;
 

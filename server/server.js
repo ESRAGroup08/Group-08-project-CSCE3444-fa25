@@ -12,6 +12,8 @@ const casualMatchmaking = require('./casualMatchmaking');
 const ranking = require('./ranking');
 const privateLobby = require('./privateLobby'); // Import the privateLobby module
 
+
+const rankedQueue = []; // Placeholder for ranked matchmaking queue
 // A simple in-memory store for game states
 const gameRooms = new Map();
 
@@ -126,6 +128,40 @@ io.on('connection', (socket) => {
         }
     });
 
+    // --- NEW: RANKED MATCHMAKING LOGIC ---
+    // This whole block is new. It goes right after the casual matchmaking logic.
+    socket.on('join_ranked', ({ username }) => {
+        const rank = ranking.getRating(username);
+        ranking.ensurePlayer(username);
+
+        console.log(`[Ranked] ${username} (Rank: ${rank}) is looking for a ranked match.`);
+        
+        const opponentIndex = rankedQueue.findIndex(p => Math.abs(p.rank - rank) <= 50);
+
+        if (opponentIndex !== -1) {
+            const opponent = rankedQueue.splice(opponentIndex, 1)[0];
+            
+            const roomId = randomUUID();
+            console.log(`[Ranked] Match found! Room: ${roomId}, Players: ${username} vs ${opponent.username}`);
+            
+            const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
+            const roomState = {
+                roomId, text, isRanked: true, // Flag this as a ranked game
+                players: {
+                    [socket.id]: { username, rank, progress: 0, wpm: 0, finished: false },
+                    [opponent.socket.id]: { username: opponent.username, rank: opponent.rank, progress: 0, wpm: 0, finished: false },
+                }
+            };
+            gameRooms.set(roomId, roomState);
+            socket.join(roomId);
+            opponent.socket.join(roomId);
+            io.to(roomId).emit('match_found', roomState);
+        } else {
+            rankedQueue.push({ socket, username, rank });
+            socket.emit('waiting_for_match');
+        }
+    });
+
     // --- CUSTOM LOBBY LOGIC ---
     socket.on('create_lobby', ({ username }) => {
         try {
@@ -196,16 +232,37 @@ io.on('connection', (socket) => {
     });
     
     // Handle player finishing
+    // --- MODIFIED: PLAYER FINISHED LOGIC (with Rank Updates) ---
+    // Replace your old 'player_finished' handler with this one.
     socket.on('player_finished', async ({ roomId, wpm, accuracy }) => {
         const room = gameRooms.get(roomId);
         if (room && room.players[socket.id]) {
             const playerState = room.players[socket.id];
+            if(playerState.finished) return; // Prevent finishing more than once
+
             playerState.finished = true;
             playerState.wpm = wpm;
             playerState.accuracy = accuracy;
-            console.log(`Bypassing DB update for ${playerState.username} after finishing.`);
+
+            // Check if this is a ranked game and handle rank updates
+            if (room.isRanked) {
+                const opponents = Object.values(room.players).filter(p => p.username !== playerState.username);
+                const winner = playerState;
+                const loser = opponents.find(p => !p.finished) || opponents[0];
+
+                if (loser) {
+                    const newRatings = ranking.updateRatings(winner.username, loser.username, 1);
+                    winner.newRank = newRatings[winner.username];
+                    loser.newRank = newRatings[loser.username];
+                    console.log(`[Ranked] ${winner.username} wins. New rank: ${winner.newRank}. ${loser.username}'s new rank: ${loser.newRank}.`);
+                }
+            } else {
+                console.log(`Bypassing rank update for non-ranked game.`);
+            }
+
             const allFinished = Object.values(room.players).every(p => p.finished);
             io.to(roomId).emit('game_over', { players: room.players });
+
             if (allFinished) {
                 setTimeout(() => gameRooms.delete(roomId), 10000);
             }

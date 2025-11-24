@@ -149,12 +149,23 @@ io.on('connection', (socket) => {
     // --- NEW: RANKED MATCHMAKING LOGIC ---
     // This whole block is new. It goes right after the casual matchmaking logic.
     socket.on('join_ranked', ({ username }) => {
+        
+         // First, check if this player is already in the queue to prevent duplicates.
+        if (rankedQueue.some(p => p.username === username)) {
+            console.log(`[Ranked] ${username} is already in the queue. Ignoring duplicate request.`);
+            // Optionally, let the client know it's already waiting
+            socket.emit('waiting_for_match'); 
+            return; // Stop execution here
+        }
+        
         const rank = ranking.getRating(username);
         ranking.ensurePlayer(username);
 
         console.log(`[Ranked] ${username} (Rank: ${rank}) is looking for a ranked match.`);
         
-        const opponentIndex = rankedQueue.findIndex(p => Math.abs(p.rank - rank) <= 50);
+        const opponentIndex = rankedQueue.findIndex(
+        p => p.username !== username && Math.abs(p.rank - rank) <= 50
+        );
 
         if (opponentIndex !== -1) {
             const opponent = rankedQueue.splice(opponentIndex, 1)[0];
@@ -177,6 +188,7 @@ io.on('connection', (socket) => {
         } else {
             rankedQueue.push({ socket, username, rank });
             socket.emit('waiting_for_match');
+            console.log(`[Ranked] ${username} added to the queue. Current queue size: ${rankedQueue.length}`);
         }
     });
 

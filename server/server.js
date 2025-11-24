@@ -30,17 +30,17 @@ const allowedOrigins = [
 
 const io = new Server(server, {
   cors: {
-    origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.indexOf(origin) === -1) {
-        const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-        return callback(new Error(msg), false);
-      }
-      return callback(null, true);
-    },
-    methods: ["GET", "POST"]
-  }
+    origin: allowedOrigins, // Use the array directly for simplicity and robustness
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  // Allow Socket.IO to handle both polling and WebSocket transports.
+  // This is crucial for reliability behind reverse proxies like Render's.
+  transports: ['polling', 'websocket'],
+  // Tell Socket.IO to trust the proxy headers from Render.
+  // This helps it correctly identify the client's origin and IP.
+  allowEIO3: true,
+  proxy: true, 
 });
 // --- END OF FIX ---
 

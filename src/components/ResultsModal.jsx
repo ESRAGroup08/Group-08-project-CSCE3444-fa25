@@ -9,6 +9,7 @@ const ResultsModal = ({ players }) => {
 
   // Convert players map to an array and sort to determine the winner
   const sortedPlayers = Object.values(players)
+    .filter(p => p) // Filter out null/undefined players
     .sort((a, b) => {
       if (a.finished && !b.finished) return -1;
       if (!a.finished && b.finished) return 1;

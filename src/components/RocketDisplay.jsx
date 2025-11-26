@@ -1,67 +1,56 @@
-import { motion } from 'motion/react';
-import { Rocket } from './Rocket.jsx';
+import { motion } from 'framer-motion';
+import { Rocket } from './Rocket.jsx'; // FIXED: Added .jsx extension explicitly
 
-export function RocketDisplay() {
-  const rockets = [
-    { id: 1, color: '#ef4444', label: 'Rocket 1' },
-    { id: 2, color: '#3b82f6', label: 'Rocket 2' },
-    { id: 3, color: '#22c55e', label: 'Rocket 3' },
-    { id: 4, color: '#eab308', label: 'Rocket 4' },
-  ];
+const ROCKET_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#eab308'];
 
+export function RocketDisplay({ players }) {
   return (
-    <div className='relative bg-slate-950 p-6 overflow-hidden'>
-      {/* Space background with stars */}
+    <div className='relative bg-slate-950 p-6 overflow-hidden rounded-t-xl border-x border-t border-slate-700 flex flex-col'>
+      {/* Background */}
       <div className='absolute inset-0 overflow-hidden'>
-        {/* Gradient background */}
         <div className='absolute inset-0 bg-gradient-to-b from-indigo-950 via-purple-950 to-slate-950' />
-        {/* Stars */}
-        {[...Array(50)].map((_, i) => (
-          <motion.div
-            key={i}
-            className='absolute w-1 h-1 bg-white rounded-full'
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              opacity: Math.random() * 0.8 + 0.2,
-            }}
-            animate={{
-              opacity: [Math.random() * 0.5 + 0.3, 1, Math.random() * 0.5 + 0.3],
-            }}
-            transition={{
-              duration: Math.random() * 3 + 2,
-              repeat: Infinity,
-              ease: 'easeInOut',
-            }}
-          />
-        ))}
-        {/* Planets/Nebula effect */}
         <div className='absolute top-10 right-20 w-32 h-32 bg-purple-500/20 rounded-full blur-3xl' />
         <div className='absolute bottom-20 left-10 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl' />
       </div>
 
-      <div className='relative grid grid-cols-4 gap-6'>
-        {rockets.map((rocket) => (
-          <div key={rocket.id} className='relative h-[400px] flex flex-col items-center'>
-            {/* Finish line */}
-            <div className='absolute top-0 w-full h-1 bg-yellow-400 rounded-full mb-4 shadow-lg shadow-yellow-400/50' />
-            <div className='text-white text-sm mb-2 mt-2 tracking-wide'>{rocket.label}</div>
-            {/* Rocket track */}
-            <div className='relative flex-1 w-full flex items-end justify-center'>
-              <motion.div
-                initial={{ y: 0 }}
-                className='absolute bottom-0'
-              >
-                <Rocket color={rocket.color} />
-              </motion.div>
-              {/* Launch pad */}
-              <div className='absolute bottom-0 w-32 h-2 bg-gray-600 rounded-full shadow-lg' />
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* Grid for Rockets */}
+      <div className='relative grid grid-cols-4 gap-6 h-[60vh] min-h-[500px] flex-1'>
+        {[...Array(4)].map((_, i) => {
+          const playerId = `player${i + 1}`;
+          // Safely get the player. If players is undefined, default to null.
+          const player = (players && players[playerId]) ? players[playerId] : null;
+          
+          // Use 0 progress if player doesn't exist
+          const progress = player ? player.progress : 0;
+          
+          // Ghost mode if player doesn't exist
+          const isGhost = !player;
 
-      {/* Bottom border accent */}
+          return (
+            <div key={i} className={`relative h-full flex flex-col items-center ${isGhost ? 'opacity-30' : ''}`}>
+              <div className='absolute top-0 w-full h-1 bg-yellow-400 rounded-full mb-4 shadow-lg shadow-yellow-400/50' />
+              
+              <div className='text-white text-sm mb-2 mt-2 tracking-wide font-mono'>
+                {/* CRITICAL FIX: Check if player exists before reading name */}
+                {player ? (player.name || player.username || `Player ${i + 1}`) : `Player ${i+1}`}
+              </div>
+
+              <div className='relative flex-1 w-full flex items-end justify-center'>
+                <motion.div
+                  className='absolute'
+                  initial={{ bottom: '0%' }}
+                  animate={{ bottom: `${progress}%` }}
+                  transition={{ duration: 0.2, ease: 'linear' }}
+                >
+                  <Rocket color={ROCKET_COLORS[i]} />
+                </motion.div>
+
+                <div className='absolute bottom-0 w-32 h-2 bg-gray-600 rounded-full shadow-lg' />
+              </div>
+            </div>
+          );
+        })}
+      </div>
       <div className='absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-slate-700 to-transparent' />
     </div>
   );

@@ -5,8 +5,7 @@ export function ControlPanel({
   targetText, 
   inputValue, 
   onInputChange, 
-  progress, 
-  accuracy 
+  progress
 }) {
 
   const handleActivatePerk = (perkName) => {
@@ -151,27 +150,7 @@ export function ControlPanel({
               </div>
             </div>
 
-            {/* Accuracy Gauge */}
-            <div className='bg-slate-950/50 border-2 border-slate-700 rounded-lg p-3 space-y-2'>
-              <div className='flex items-center justify-between'>
-                <div className='text-slate-400 text-[10px]'>ACCURACY</div>
-                <div className={`w-1.5 h-1.5 rounded-full ${accuracy >= 90 ? 'bg-green-500' : accuracy >= 70 ? 'bg-yellow-500' : 'bg-red-500'}`} />
-              </div>
-              <div className={`text-xl tabular-nums ${accuracy >= 90 ? 'text-green-400' : accuracy >= 70 ? 'text-yellow-400' : 'text-red-400'}`}>
-                {accuracy}%
-              </div>
-              <div className='w-full bg-slate-800 rounded-full h-1.5 overflow-hidden'>
-                <motion.div
-                  className={`h-full ${accuracy >= 90 ? 'bg-gradient-to-r from-green-500 to-emerald-400' : accuracy >= 70 ? 'bg-gradient-to-r from-yellow-500 to-amber-400' : 'bg-gradient-to-r from-red-500 to-rose-400'}`}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${accuracy}%` }}
-                  transition={{ duration: 0.3 }}
-                />
-              </div>
-              <div className='text-slate-500 text-[10px]'>
-                {accuracy >= 90 ? 'OPTIMAL' : accuracy >= 70 ? 'NOMINAL' : 'CRITICAL'}
-              </div>
-            </div>
+
           </div>
         </div>
       </div>

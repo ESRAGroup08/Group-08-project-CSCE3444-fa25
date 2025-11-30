@@ -1,16 +1,84 @@
-import { Zap, Rocket, Gauge } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Zap, Rocket, Gauge, AlertTriangle, ShieldOff } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 export function ControlPanel({ 
   targetText, 
   inputValue, 
   onInputChange, 
-  progress
+  progress,
+  heldPerk, // New prop
+  onUsePerk, // New prop
 }) {
 
   const handleActivatePerk = (perkName) => {
-    console.log(`Activated perk: ${perkName}`);
-    // TODO: Implement perk activation logic
+    if (onUsePerk) {
+      onUsePerk(perkName);
+    }
+  };
+
+  const perksConfig = {
+    'ROCKET_FUEL': {
+      name: 'ROCKET FUEL',
+      description: 'Completes 25% of the sentence',
+      Icon: Rocket,
+      color: 'orange',
+    },
+    'ASTEROID_ATTACK': {
+      name: 'ASTEROID ATTACK',
+      description: 'Disrupts your opponent',
+      Icon: AlertTriangle,
+      color: 'red',
+    },
+  };
+
+  const renderPerkSlot = () => {
+    const config = heldPerk ? perksConfig[heldPerk] : null;
+
+    if (!config) {
+      // Render a disabled "No Perk" state
+      return (
+        <div className="w-full bg-slate-800/30 border-2 border-dashed border-slate-700 rounded-lg p-3 relative h-[76px] flex items-center justify-center">
+          <div className="flex items-center gap-3 opacity-40">
+            <div className="w-8 h-8 bg-slate-700/50 rounded flex items-center justify-center flex-shrink-0">
+              <ShieldOff className="w-4 h-4 text-slate-500" />
+            </div>
+            <div className="text-left flex-1">
+              <div className="text-slate-400 text-xs">NO PERK</div>
+              <div className="text-slate-500 text-[10px]">Keep typing to earn one!</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    // Render the active perk button
+    const color = config.color;
+    return (
+      <motion.button
+        onClick={() => handleActivatePerk(heldPerk)}
+        className={`w-full bg-gradient-to-br from-${color}-900/50 to-${color}-950/50 border-2 border-${color}-700 rounded-lg p-3 transition-all group relative overflow-hidden hover:border-${color}-500 h-[76px]`}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+      >
+        <div className={`absolute inset-0 bg-${color}-500/10 opacity-0 group-hover:opacity-100 transition-opacity`} />
+        <div className='relative flex items-center gap-3'>
+          <div className={`w-8 h-8 bg-${color}-500/20 rounded flex items-center justify-center flex-shrink-0`}>
+            <config.Icon className={`w-4 h-4 text-${color}-400`} />
+          </div>
+          <div className='text-left flex-1'>
+            <div className={`text-${color}-300 text-xs`}>{config.name}</div>
+            <div className='text-slate-500 text-[10px]'>{config.description}</div>
+          </div>
+        </div>
+        {/* Activation lights */}
+        <div className='absolute top-2 right-2 flex gap-1'>
+          <div className={`w-1.5 h-1.5 rounded-full bg-${color}-400 animate-pulse`} />
+        </div>
+        <div className="absolute bottom-2 right-2 text-xs text-slate-500">
+            Press <span className="font-mono bg-slate-900 px-1 rounded">`</span> to use
+        </div>
+      </motion.button>
+    );
   };
 
   return (
@@ -32,57 +100,8 @@ export function ControlPanel({
         <div className='grid grid-cols-12 gap-4'>
           {/* Left Side - Power-ups */}
           <div className='col-span-3 space-y-3'>
-            <div className='text-slate-400 text-[10px] tracking-widest mb-2'>POWER-UPS</div>
-
-            {/* Speed Boost */}
-            <motion.button
-              onClick={() => handleActivatePerk('Speed Boost')}
-              className='w-full bg-gradient-to-br from-blue-900/50 to-blue-950/50 border-2 border-blue-700 rounded-lg p-3 hover:border-blue-500 transition-all group relative overflow-hidden'
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <div className='absolute inset-0 bg-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity' />
-              <div className='relative flex items-center gap-3'>
-                <div className='w-8 h-8 bg-blue-500/20 rounded flex items-center justify-center flex-shrink-0'>
-                  <Zap className='w-4 h-4 text-blue-400' />
-                </div>
-                <div className='text-left flex-1'>
-                  <div className='text-blue-300 text-xs'>SPEED BOOST</div>
-                  <div className='text-slate-500 text-[10px]'>x2 Speed</div>
-                </div>
-              </div>
-              {/* Activation lights */}
-              <div className='absolute top-2 right-2 flex gap-1'>
-                <div className='w-1 h-1 rounded-full bg-blue-500' />
-                <div className='w-1 h-1 rounded-full bg-blue-500' />
-                <div className='w-1 h-1 rounded-full bg-blue-500' />
-              </div>
-            </motion.button>
-
-            {/* Rocket Fuel */}
-            <motion.button
-              onClick={() => handleActivatePerk('Rocket Fuel')}
-              className='w-full bg-gradient-to-br from-orange-900/50 to-orange-950/50 border-2 border-orange-700 rounded-lg p-3 hover:border-orange-500 transition-all group relative overflow-hidden'
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <div className='absolute inset-0 bg-orange-500/10 opacity-0 group-hover:opacity-100 transition-opacity' />
-              <div className='relative flex items-center gap-3'>
-                <div className='w-8 h-8 bg-orange-500/20 rounded flex items-center justify-center flex-shrink-0'>
-                  <Rocket className='w-4 h-4 text-orange-400' />
-                </div>
-                <div className='text-left flex-1'>
-                  <div className='text-orange-300 text-xs'>ROCKET FUEL</div>
-                  <div className='text-slate-500 text-[10px]'>+25% Jump</div>
-                </div>
-              </div>
-              {/* Activation lights */}
-              <div className='absolute top-2 right-2 flex gap-1'>
-                <div className='w-1 h-1 rounded-full bg-orange-500' />
-                <div className='w-1 h-1 rounded-full bg-orange-500' />
-                <div className='w-1 h-1 rounded-full bg-orange-500' />
-              </div>
-            </motion.button>
+            <div className='text-slate-400 text-[10px] tracking-widest mb-2'>PERK SLOT</div>
+            {renderPerkSlot()}
           </div>
 
           {/* Center - Main Display */}
@@ -120,8 +139,9 @@ export function ControlPanel({
                 value={inputValue}
                 onChange={onInputChange}
                 placeholder='► TYPE HERE TO LAUNCH...'
-                className='w-full bg-slate-950 border-2 border-slate-700 rounded-lg px-4 py-3 text-green-400 placeholder-slate-600 focus:outline-none focus:border-green-500 transition-colors tracking-wide'
+                className='w-full bg-slate-950 border-2 border-slate-700 rounded-lg px-4 py-3 text-green-400 placeholder-slate-600 focus:outline-none focus:border-green-500 transition-colors tracking-widest'
                 autoFocus
+                autoComplete="off"
               />
             </div>
           </div>
@@ -149,8 +169,6 @@ export function ControlPanel({
                 {inputValue.length} / {targetText.length} CHARS
               </div>
             </div>
-
-
           </div>
         </div>
       </div>

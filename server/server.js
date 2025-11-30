@@ -105,8 +105,48 @@ const TEXT_SNIPPETS = [
 ];
 
 const gameRooms = new Map();
+const PERKS = ['ASTEROID_ATTACK', 'ROCKET_FUEL'];
 const rankedQueue = []; // Placeholder for ranked matchmaking queue
 // A simple in-memory store for game states
+
+function startGameLoop(roomId) {
+    const room = gameRooms.get(roomId);
+    if (!room) return;
+
+    // Grant perks every 5-7 seconds
+    const perkInterval = Math.random() * 2000 + 5000;
+
+    room.gameInterval = setInterval(() => {
+        const playerIds = Object.keys(room.players);
+        const now = Date.now();
+        const cooldown = 4000 + Math.random() * 1000; // 4-5 seconds cooldown
+
+        const eligiblePlayers = playerIds.filter(id => {
+            const player = room.players[id];
+            // A player is eligible if they don't have a perk AND their cooldown has passed.
+            return !player.perk && (now - (player.perkUsedAt || 0) > cooldown);
+        });
+
+        if (eligiblePlayers.length > 0) {
+            const randomPlayerId = eligiblePlayers[Math.floor(Math.random() * eligiblePlayers.length)];
+            const randomPerk = PERKS[Math.floor(Math.random() * PERKS.length)];
+            
+            room.players[randomPlayerId].perk = randomPerk;
+            io.to(randomPlayerId).emit('perk_granted', { perk: randomPerk });
+            console.log(`[Game Loop] Granted '${randomPerk}' to player ${randomPlayerId} in room ${roomId}`);
+        }
+    }, perkInterval);
+}
+
+function stopGameLoop(roomId) {
+    const room = gameRooms.get(roomId);
+    if (room && room.gameInterval) {
+        clearInterval(room.gameInterval);
+        delete room.gameInterval;
+        console.log(`[Game Loop] Stopped for room ${roomId}`);
+    }
+}
+
 
 io.on('connection', (socket) => {
     console.log('a user connected:', socket.id);
@@ -128,14 +168,15 @@ io.on('connection', (socket) => {
                 const roomState = {
                     roomId, text,
                     players: {
-                        [self.socket.id]: { username: self.username, progress: 0, wpm: 0, finished: false },
-                        [opponent.socket.id]: { username: opponent.username, progress: 0, wpm: 0, finished: false },
+                        [self.socket.id]: { username: self.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
+                        [opponent.socket.id]: { username: opponent.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
                     }
                 };
                 gameRooms.set(roomId, roomState);
                 self.socket.join(roomId);
                 opponent.socket.join(roomId);
                 io.to(roomId).emit('match_found', { roomId, players: roomState.players, text });
+                startGameLoop(roomId);
             } else {
                 console.log(`${username} is waiting in the queue.`);
                 socket.emit('waiting_for_match');
@@ -177,14 +218,15 @@ io.on('connection', (socket) => {
             const roomState = {
                 roomId, text, isRanked: true, // Flag this as a ranked game
                 players: {
-                    [socket.id]: { username, rank, progress: 0, wpm: 0, finished: false },
-                    [opponent.socket.id]: { username: opponent.username, rank: opponent.rank, progress: 0, wpm: 0, finished: false },
+                    [socket.id]: { username, rank, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
+                    [opponent.socket.id]: { username: opponent.username, rank: opponent.rank, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
                 }
             };
             gameRooms.set(roomId, roomState);
             socket.join(roomId);
             opponent.socket.join(roomId);
             io.to(roomId).emit('match_found', roomState);
+            startGameLoop(roomId);
         } else {
             rankedQueue.push({ socket, username, rank });
             socket.emit('waiting_for_match');
@@ -238,12 +280,13 @@ io.on('connection', (socket) => {
         
         // This will now work because playersMap is a Map object
         playersMap.forEach(player => {
-            playersState[player.socket.id] = { username: player.username, progress: 0, wpm: 0, finished: false };
+            playersState[player.socket.id] = { username: player.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 };
         });
         
         gameRooms.set(roomId, { roomId, text, players: playersState });
         
         io.to(roomId).emit('game_starting', { roomId, players: playersState, text });
+        startGameLoop(roomId);
 
     } catch (error) {
         console.error(`[Lobby] Error starting game in ${roomId}:`, error.message);
@@ -258,6 +301,36 @@ io.on('connection', (socket) => {
             room.players[socket.id].progress = progress;
             room.players[socket.id].wpm = wpm;
             socket.to(roomId).emit('opponent_progress', { playerId: socket.id, progress, wpm });
+        }
+    });
+
+    // --- PERK USAGE ---
+    socket.on('use_perk', ({ roomId, perk }) => {
+        const room = gameRooms.get(roomId);
+        const player = room?.players[socket.id];
+
+        if (!player || player.perk !== perk) {
+            console.log(`[Perk] Invalid perk usage by ${socket.id}. Has: ${player?.perk}, Tried: ${perk}`);
+            return;
+        }
+
+        console.log(`[Perk] Player ${socket.id} used ${perk} in room ${roomId}`);
+        player.perk = null; // Consume the perk
+        player.perkUsedAt = Date.now(); // Set the cooldown timestamp
+        socket.emit('perk_used'); // Tell client the perk is gone
+
+        if (perk === 'ASTEROID_ATTACK') {
+            socket.to(roomId).emit('asteroid_hit');
+        } else if (perk === 'ROCKET_FUEL') {
+            const currentProgress = player.progress || 0;
+            const text = room.text;
+            
+            const currentLength = Math.floor(text.length * (currentProgress / 100));
+            const boostLength = Math.floor(text.length * 0.25);
+            
+            const autoCompletedText = text.substring(currentLength, currentLength + boostLength);
+
+            socket.emit('perk_effect_rocket_fuel', { autoCompletedText });
         }
     });
     
@@ -294,6 +367,7 @@ io.on('connection', (socket) => {
             io.to(roomId).emit('game_over', { players: room.players });
 
             if (allFinished) {
+                stopGameLoop(roomId);
                 setTimeout(() => gameRooms.delete(roomId), 10000);
             }
         }
@@ -303,6 +377,15 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('user disconnected:', socket.id);
         casualMatchmaking.removeBySocket(socket);
+        // Stop any game loops this player was in
+        for (const [roomId, room] of gameRooms.entries()) {
+            if (room.players[socket.id]) {
+                const allFinished = Object.values(room.players).every(p => p.finished || p.socket.id === socket.id);
+                if (allFinished) {
+                    stopGameLoop(roomId);
+                }
+            }
+        }
         const affectedLobbies = privateLobby.removePlayerBySocket(socket);
         affectedLobbies.forEach(lobby => {
             if (lobby.roomState) {

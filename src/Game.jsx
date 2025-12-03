@@ -37,6 +37,7 @@ const Game = () => {
   const [heldPerk, setHeldPerk] = useState(null);
   const [isHitByAsteroid, setIsHitByAsteroid] = useState(false);
   const [myPlayerId, setMyPlayerId] = useState(null);
+  const [playerResult, setPlayerResult] = useState(null); // 'won' or 'lost'
 
   useEffect(() => {
     if (socket) {
@@ -69,6 +70,12 @@ const Game = () => {
     const handleGameOver = ({ players }) => {
         setGameState(prev => ({ ...prev, players }));
         setIsGameOver(true);
+        
+        // Determine if current player won
+        const myPlayer = players[myPlayerId];
+        const otherPlayers = Object.values(players).filter(p => p.username !== myPlayer?.username);
+        const didIWin = myPlayer && myPlayer.finished && (!otherPlayers.some(p => p.finished) || myPlayer.wpm > (otherPlayers.find(p => p.finished)?.wpm || 0));
+        setPlayerResult(didIWin ? 'won' : 'lost');
     };
 
     const handlePerkGranted = ({ perk }) => {
@@ -207,7 +214,7 @@ const Game = () => {
         {isHitByAsteroid && <AsteroidWarning />}
       </AnimatePresence>
       
-      {isGameOver && <ResultsModal players={gameState.players} />}
+      {isGameOver && <ResultsModal players={gameState.players} myPlayerId={myPlayerId} playerResult={playerResult} />}
       
       <main className="flex-1 flex flex-col justify-center">
         <RocketDisplay players={gameState.players} />

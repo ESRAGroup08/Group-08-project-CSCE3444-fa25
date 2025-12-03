@@ -11,8 +11,12 @@ const SERVER_URL = process.env.NODE_ENV === 'production'
 console.log("--- App.jsx is loading ---");
 console.log(`Attempting to connect to WebSocket server at: ${SERVER_URL}`);
 
-// Initialize the socket connection
-const socket = io({
+// Initialize the socket connection with explicit URL and options
+const socket = io(SERVER_URL, {
+  reconnection: true,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  reconnectionAttempts: 5,
   transports: ['websocket', 'polling']
 });
 

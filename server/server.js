@@ -396,7 +396,7 @@ io.on('connection', (socket) => {
 });
 
 // Final catch-all to serve the React app
-app.get('/*', (req, res) => { // <--- THE ONLY CHANGE IS HERE
+app.use((req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 

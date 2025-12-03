@@ -15,6 +15,7 @@ const MainMenu = () => {
   };
 
   const handleQuit = () => {
+    localStorage.removeItem('username');
     navigate('/');
   };
 
@@ -56,7 +57,7 @@ const MainMenu = () => {
             </li>
             <li>
               <button className="menu-button secondary" onClick={handleQuit}>
-                QUIT
+                LOGOUT
               </button>
             </li>
           </ul>

@@ -4,9 +4,16 @@ import io from 'socket.io-client';
 
 // --- THIS IS THE FIX ---
 // Determine the server URL based on the environment
-const SERVER_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://group-08-project-csce3444-fa25.onrender.com' // Your live Render URL
-  : 'http://localhost:3000';                              // Your local development URL
+const getServerURL = () => {
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://group-08-project-csce3444-fa25.onrender.com';
+  }
+  // In development, always use localhost:3000 (the Express server)
+  // regardless of what port Vite is running on
+  return 'http://localhost:3000';
+};
+
+const SERVER_URL = getServerURL();
 
 console.log("--- App.jsx is loading ---");
 console.log(`Attempting to connect to WebSocket server at: ${SERVER_URL}`);

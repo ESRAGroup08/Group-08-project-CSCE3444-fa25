@@ -20,7 +20,10 @@ const server = http.createServer(app);
 // --- THIS IS THE FIX ---
 // Define allowed origins for CORS
 const allowedOrigins = [
-  "http://localhost:5173", // Your local development environment
+  "http://localhost:5173", // Your local development environment (Vite default)
+  "http://localhost:5174", // Vite fallback port if 5173 is in use
+  "http://localhost:5175", // Additional fallback ports
+  "http://localhost:5176",
   "https://group-08-project-csce3444-fa25.onrender.com", // Your main Render production URL
   "https://group-08-multi-feat-preview.onrender.com" // Your preview Render URL
 ];

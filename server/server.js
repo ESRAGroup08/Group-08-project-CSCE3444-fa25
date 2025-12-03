@@ -383,8 +383,6 @@ io.on('connection', (socket) => {
             }
         }
     });
-        }
-    });
 
     // Handle disconnects
     socket.on('disconnect', () => {

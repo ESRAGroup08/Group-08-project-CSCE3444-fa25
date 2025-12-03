@@ -6,8 +6,7 @@ server/node_modules/
 .vscode/
 
 # Environment variables - VERY IMPORTANT for secret keys (like for Firestore)
-.env
-*.env.local
+.env*
 
 # Build output
 dist/

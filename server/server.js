@@ -3,398 +3,404 @@ const http = require('http');
 const { Server } = require("socket.io");
 const path = require('path');
 const cors = require('cors');
-const mongoose = require('mongoose');
+// const mongoose = require('mongoose');
 const session = require('express-session');
 const passport = require('passport');
-const GoogleStrategy = require('passport-google-oauth20').Strategy;
+// const GoogleStrategy = require('passport-google-oauth20').Strategy; // Bypassed
+const { randomUUID } = require('crypto');
+const casualMatchmaking = require('./casualMatchmaking');
+const ranking = require('./ranking');
+const privateLobby = require('./privateLobby'); // Import the privateLobby module
+
+
 
 const app = express();
 const server = http.createServer(app);
+
+// --- THIS IS THE FIX ---
+// Define allowed origins for CORS
+const allowedOrigins = [
+  "http://localhost:5173", // Your local development environment
+  "https://group-08-project-csce3444-fa25.onrender.com", // Your main Render production URL
+  "https://group-08-multi-feat-preview.onrender.com" // Your preview Render URL
+];
+
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"]
-  }
+    origin: allowedOrigins, // Use the array directly for simplicity and robustness
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  // Allow Socket.IO to handle both polling and WebSocket transports.
+  // This is crucial for reliability behind reverse proxies like Render's.
+  transports: ['polling', 'websocket'],
+  // Tell Socket.IO to trust the proxy headers from Render.
+  // This helps it correctly identify the client's origin and IP.
+  allowEIO3: true,
+  proxy: true, 
 });
+// --- END OF FIX ---
 
-const PORT = process.env.PORT || 3000;
 
-// --- Database Connection ---
+
+/* --- ALL DATABASE AND AUTHENTICATION CODE BYPASSED FOR DEVELOPMENT --- */
+/*
+// Database Connection
 mongoose.connect('mongodb://localhost:27017/typing_game')
   .then(() => console.log('MongoDB connected successfully.'))
   .catch(err => console.error('MongoDB connection error:', err));
 
-// --- Mongoose Schemas ---
-const userSchema = new mongoose.Schema({
-  googleId: { type: String, sparse: true, unique: true },
-  username: { type: String, required: true, unique: true, trim: true },
-  gamesPlayed: { type: Number, default: 0 },
-  averageWPM: { type: Number, default: 0 },
-  averageAccuracy: { type: Number, default: 0 },
-  createdAt: { type: Date, default: Date.now },
-  friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  friendRequestsSent: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  friendRequestsReceived: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
-});
-
+// Mongoose Schemas
+const userSchema = new mongoose.Schema({ ... });
 const User = mongoose.model('User', userSchema);
+*/
 
 // --- Middleware ---
-app.use(cors());
-app.use(express.json()); // Middleware to parse JSON bodies
-
-// Sessions and Passport Configuration
+app.use(cors({ origin: allowedOrigins }));
+app.use(express.json());
+// Serve the static files from the React app
+app.use(express.static(path.join(__dirname, '../dist')));
+/*
+// Sessions and Passport Configuration - Bypassed
 app.use(session({
-  secret: 'a_secret_key_for_sessions_replace_this', // Replace with a real secret in production
+  secret: 'a_secret_key_for_sessions_replace_this',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false } // Set to true if using HTTPS
+  cookie: { secure: false }
 }));
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Passport Google Strategy
-passport.use(new GoogleStrategy({
-    clientID: 'test_client_id_12345', // Test credentials
-    clientSecret: 'test_client_secret_12345', // Test credentials
-    callbackURL: "/auth/google/callback"
-  },
-  async (accessToken, refreshToken, profile, done) => {
-    try {
-      let user = await User.findOne({ googleId: profile.id });
-      if (user) {
-        return done(null, user);
-      } else {
-        // Create a new user
-        const newUser = new User({
-          googleId: profile.id,
-          username: profile.displayName || `User${profile.id}`
-        });
-        // Ensure username is unique
-        const existingUser = await User.findOne({ username: newUser.username });
-        if (existingUser) {
-          newUser.username = `User${profile.id.slice(-5)}`;
-        }
-        await newUser.save();
-        return done(null, newUser);
-      }
-    } catch (err) {
-      return done(err, null);
-    }
-  }
-));
+// Passport Google Strategy - Bypassed
+passport.use(new GoogleStrategy({ ... }, async (..., done) => { ... }));
+passport.serializeUser((user, done) => { ... });
+passport.deserializeUser(async (id, done) => { ... });
 
-passport.serializeUser((user, done) => {
-  done(null, user.id);
-});
+// Auth & API Routes - Bypassed
+app.get('/auth/google', ...);
+app.get('/auth/google/callback', ...);
+app.get('/api/auth/status', ...);
+app.get('/auth/logout', ...);
+app.post('/api/login', ...);
+app.get('/api/users/:username', ...);
+app.put('/api/users/:username', ...);
 
-passport.deserializeUser(async (id, done) => {
-  try {
-    const user = await User.findById(id);
-    done(null, user);
-  } catch (err) {
-    done(err, null);
-  }
-});
-
-// --- Auth Routes ---
-app.get('/auth/google',
-  passport.authenticate('google', { scope: ['profile'] })
-);
-
-app.get('/auth/google/callback', 
-  passport.authenticate('google', { failureRedirect: '/' }),
-  (req, res) => {
-    // On successful authentication, store username in a way the client can access
-    if (req.user) {
-      res.cookie('username', req.user.username, { httpOnly: false }); // Make accessible to client-side script
-    }
-    // Redirect to the main menu or a specific page
-    res.redirect('/#/menu');
-  }
-);
-
-app.get('/api/auth/status', (req, res) => {
-  if (req.isAuthenticated()) {
-    res.json({ loggedIn: true, user: req.user });
-  } else {
-    res.json({ loggedIn: false });
-  }
-});
-
-app.get('/auth/logout', (req, res, next) => {
-  res.clearCookie('username');
-  req.logout(function(err) {
-    if (err) { return next(err); }
-    req.session.destroy(() => {
-      res.redirect('/');
-    });
-  });
-});
-
-
-// --- API Endpoints ---
-// Login or Register a user
-app.post('/api/login', async (req, res) => {
-  try {
-    const { username } = req.body;
-    if (!username) {
-      return res.status(400).json({ message: 'Username is required' });
-    }
-
-    const user = await User.findOneAndUpdate(
-      { username: username },
-      { $setOnInsert: { username: username } },
-      { new: true, upsert: true, runValidators: true }
-    );
-
-    res.status(200).json(user);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error during login/registration', error });
-  }
-});
-
-// Get user profile
-app.get('/api/users/:username', async (req, res) => {
-  try {
-    const { username } = req.params;
-    const user = await User.findOne({ username: username });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-    res.status(200).json(user);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error });
-  }
-});
-
-// Update user profile
-app.put('/api/users/:username', async (req, res) => {
-  try {
-    const { username } = req.params;
-    const { newUsername } = req.body;
-
-    if (!newUsername) {
-      return res.status(400).json({ message: 'New username is required' });
-    }
-
-    const updatedUser = await User.findOneAndUpdate(
-      { username: username },
-      { username: newUsername },
-      { new: true, runValidators: true }
-    );
-
-    if (!updatedUser) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    res.status(200).json(updatedUser);
-  } catch (error) {
-    // Handle potential duplicate key error
-    if (error.code === 11000) {
-      return res.status(409).json({ message: 'That username is already taken.' });
-    }
-    res.status(500).json({ message: 'Server error', error });
-  }
-});
-
-// --- Friend System API Endpoints ---
 const friendRouter = express.Router();
-
-// Middleware to get user from username header or session
-const getAuthenticatedUser = async (req, res, next) => {
-  try {
-    // Try to get from session first (passport)
-    if (req.isAuthenticated()) {
-      return next();
-    }
-    
-    // Fallback: get from username header
-    const username = req.headers['x-username'];
-    if (username) {
-      const user = await User.findOne({ username });
-      if (user) {
-        req.user = user;
-        return next();
-      }
-    }
-    
-    res.status(401).json({ message: 'You must be logged in to perform this action.' });
-  } catch (error) {
-    res.status(500).json({ message: 'Authentication error', error });
-  }
-};
-
-friendRouter.use(getAuthenticatedUser);
-
-// Get all friend data for the logged-in user
-friendRouter.get('/', async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id)
-      .populate('friends', 'username')
-      .populate('friendRequestsSent', 'username')
-      .populate('friendRequestsReceived', 'username');
-    res.json({
-      friends: user.friends,
-      sentRequests: user.friendRequestsSent,
-      receivedRequests: user.friendRequestsReceived
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error });
-  }
-});
-
-// Search for users
-friendRouter.get('/search', async (req, res) => {
-    const { query } = req.query;
-    if (!query) {
-        return res.status(400).json({ message: 'Search query is required.' });
-    }
-    try {
-        const users = await User.find({
-            username: { $regex: query, $options: 'i' },
-            _id: { $ne: req.user.id } // Exclude self
-        }).select('username _id');
-        res.json(users);
-    } catch (error) {
-        res.status(500).json({ message: 'Server error', error });
-    }
-});
-
-
-// Send a friend request
-friendRouter.post('/request/:userId', async (req, res) => {
-  try {
-    const recipient = await User.findById(req.params.userId);
-    const sender = await User.findById(req.user.id);
-
-    if (!recipient) return res.status(404).json({ message: 'Recipient not found.' });
-    if (sender.id === recipient.id) return res.status(400).json({ message: 'You cannot send a friend request to yourself.' });
-    if (sender.friends.includes(recipient.id)) return res.status(400).json({ message: 'You are already friends.' });
-    if (sender.friendRequestsSent.includes(recipient.id)) return res.status(400).json({ message: 'Friend request already sent.' });
-
-    recipient.friendRequestsReceived.push(sender.id);
-    sender.friendRequestsSent.push(recipient.id);
-
-    await recipient.save();
-    await sender.save();
-
-    res.status(200).json({ message: 'Friend request sent.' });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error });
-  }
-});
-
-// Accept a friend request
-friendRouter.post('/accept/:userId', async (req, res) => {
-    try {
-        const sender = await User.findById(req.params.userId);
-        const recipient = await User.findById(req.user.id);
-
-        if (!sender) return res.status(404).json({ message: 'User not found.' });
-
-        // Atomically update both users
-        await User.updateOne({ _id: recipient.id }, {
-            $pull: { friendRequestsReceived: sender.id },
-            $addToSet: { friends: sender.id }
-        });
-        await User.updateOne({ _id: sender.id }, {
-            $pull: { friendRequestsSent: recipient.id },
-            $addToSet: { friends: recipient.id }
-        });
-
-        res.status(200).json({ message: 'Friend request accepted.' });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error', error });
-    }
-});
-
-// Reject or cancel a friend request / unfriend
-friendRouter.post('/reject/:userId', async (req, res) => {
-    try {
-        const otherUser = await User.findById(req.params.userId);
-        const currentUser = await User.findById(req.user.id);
-
-        if (!otherUser) return res.status(404).json({ message: 'User not found.' });
-
-        // Atomically update both users
-        await User.updateOne({ _id: currentUser.id }, {
-            $pull: { friends: otherUser.id, friendRequestsReceived: otherUser.id, friendRequestsSent: otherUser.id }
-        });
-        await User.updateOne({ _id: otherUser.id }, {
-            $pull: { friends: currentUser.id, friendRequestsReceived: currentUser.id, friendRequestsSent: currentUser.id }
-        });
-
-        res.status(200).json({ message: 'Action completed.' });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error', error });
-    }
-});
-
-
+friendRouter.use(...);
+friendRouter.get('/', ...);
+// ... all other friend routes
 app.use('/api/friends', friendRouter);
+*/
+/* --- END OF BYPASSED CODE --- */
 
-// DEBUG ENDPOINT: Create test users and friendships (for testing only)
-app.post('/api/debug/create-test-friends', async (req, res) => {
-  try {
-    const username = req.headers['x-username'] || 'TestUser';
-    
-    // Get or create main user
-    let mainUser = await User.findOne({ username });
-    if (!mainUser) {
-      mainUser = await User.create({ username });
+const PORT = process.env.PORT || 3000;
+console.log("NOTE: MongoDB connection and all DB-related APIs are bypassed for development.");
+
+
+// --- Socket.IO Logic ---
+const TEXT_SNIPPETS = [
+    'The quick brown fox jumps over the lazy dog.',
+    'A journey of a thousand miles begins with a single step. To be or not to be, that is the question.',
+    'Supercalifragilisticexpialidocious pneumatic pseudocode exemplifies paradoxical idiosyncrasies.',
+];
+
+const gameRooms = new Map();
+const PERKS = ['ASTEROID_ATTACK', 'ROCKET_FUEL'];
+const rankedQueue = []; // Placeholder for ranked matchmaking queue
+// A simple in-memory store for game states
+
+function startGameLoop(roomId) {
+    const room = gameRooms.get(roomId);
+    if (!room) return;
+
+    // Grant perks every 5-7 seconds
+    const perkInterval = Math.random() * 2000 + 5000;
+
+    room.gameInterval = setInterval(() => {
+        const playerIds = Object.keys(room.players);
+        const now = Date.now();
+        const cooldown = 4000 + Math.random() * 1000; // 4-5 seconds cooldown
+
+        const eligiblePlayers = playerIds.filter(id => {
+            const player = room.players[id];
+            // A player is eligible if they don't have a perk AND their cooldown has passed.
+            return !player.perk && (now - (player.perkUsedAt || 0) > cooldown);
+        });
+
+        if (eligiblePlayers.length > 0) {
+            const randomPlayerId = eligiblePlayers[Math.floor(Math.random() * eligiblePlayers.length)];
+            const randomPerk = PERKS[Math.floor(Math.random() * PERKS.length)];
+            
+            room.players[randomPlayerId].perk = randomPerk;
+            io.to(randomPlayerId).emit('perk_granted', { perk: randomPerk });
+            console.log(`[Game Loop] Granted '${randomPerk}' to player ${randomPlayerId} in room ${roomId}`);
+        }
+    }, perkInterval);
+}
+
+function stopGameLoop(roomId) {
+    const room = gameRooms.get(roomId);
+    if (room && room.gameInterval) {
+        clearInterval(room.gameInterval);
+        delete room.gameInterval;
+        console.log(`[Game Loop] Stopped for room ${roomId}`);
     }
+}
 
-    // Create test1 to test10 and add as friends
-    const createdFriends = [];
-    for (let i = 1; i <= 10; i++) {
-      const testUsername = `test${i}`;
-      let testUser = await User.findOne({ username: testUsername });
-      
-      if (!testUser) {
-        testUser = await User.create({ username: testUsername });
-      }
-
-      // Add to friends if not already
-      if (!mainUser.friends.includes(testUser._id)) {
-        mainUser.friends.push(testUser._id);
-      }
-      if (!testUser.friends.includes(mainUser._id)) {
-        testUser.friends.push(mainUser._id);
-        await testUser.save();
-      }
-
-      createdFriends.push(testUsername);
-    }
-
-    await mainUser.save();
-    
-    res.json({
-      message: 'Test friends created successfully',
-      friends: createdFriends,
-      totalFriends: mainUser.friends.length
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Error creating test friends', error });
-  }
-});
-
-
-// Serve the static files from the React app
-app.use(express.static(path.join(__dirname, '../dist')));
 
 io.on('connection', (socket) => {
-  console.log('a user connected:', socket.id);
+    console.log('a user connected:', socket.id);
 
-  socket.on('disconnect', () => {
-    console.log('user disconnected:', socket.id);
-  });
+    // Casual Matchmaking
+    socket.on('join_casual', async ({ username }) => {
+        try {
+            console.log(`${username} (${socket.id}) is looking for a casual match.`);
+            const stats = { wpm: 50, accuracy: 95, gamesPlayed: 10 };
+            console.log(`Bypassing DB lookup for ${username}. Using placeholder stats.`);
+            const skillScore = ranking.computeSkillScore(stats);
+            const result = casualMatchmaking.enqueue({ socket, username, stats, skillScore });
+
+            if (result.matched) {
+                const { self, opponent } = result;
+                const roomId = randomUUID();
+                console.log(`Match found! Room: ${roomId}, Players: ${self.username}, ${opponent.username}`);
+                const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
+                const roomState = {
+                    roomId, text,
+                    players: {
+                        [self.socket.id]: { username: self.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
+                        [opponent.socket.id]: { username: opponent.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
+                    }
+                };
+                gameRooms.set(roomId, roomState);
+                self.socket.join(roomId);
+                opponent.socket.join(roomId);
+                io.to(roomId).emit('match_found', { roomId, players: roomState.players, text });
+                startGameLoop(roomId);
+            } else {
+                console.log(`${username} is waiting in the queue.`);
+                socket.emit('waiting_for_match');
+            }
+        } catch (error) {
+            console.error('Error during matchmaking:', error);
+            socket.emit('matchmaking_error', { message: 'An error occurred while trying to find a match.' });
+        }
+    });
+
+    // --- NEW: RANKED MATCHMAKING LOGIC ---
+    // This whole block is new. It goes right after the casual matchmaking logic.
+    socket.on('join_ranked', ({ username }) => {
+        
+         // First, check if this player is already in the queue to prevent duplicates.
+        if (rankedQueue.some(p => p.username === username)) {
+            console.log(`[Ranked] ${username} is already in the queue. Ignoring duplicate request.`);
+            // Optionally, let the client know it's already waiting
+            socket.emit('waiting_for_match'); 
+            return; // Stop execution here
+        }
+        
+        const rank = ranking.getRating(username);
+        ranking.ensurePlayer(username);
+
+        console.log(`[Ranked] ${username} (Rank: ${rank}) is looking for a ranked match.`);
+        
+        const opponentIndex = rankedQueue.findIndex(
+        p => p.username !== username && Math.abs(p.rank - rank) <= 50
+        );
+
+        if (opponentIndex !== -1) {
+            const opponent = rankedQueue.splice(opponentIndex, 1)[0];
+            
+            const roomId = randomUUID();
+            console.log(`[Ranked] Match found! Room: ${roomId}, Players: ${username} vs ${opponent.username}`);
+            
+            const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
+            const roomState = {
+                roomId, text, isRanked: true, // Flag this as a ranked game
+                players: {
+                    [socket.id]: { username, rank, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
+                    [opponent.socket.id]: { username: opponent.username, rank: opponent.rank, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
+                }
+            };
+            gameRooms.set(roomId, roomState);
+            socket.join(roomId);
+            opponent.socket.join(roomId);
+            io.to(roomId).emit('match_found', roomState);
+            startGameLoop(roomId);
+        } else {
+            rankedQueue.push({ socket, username, rank });
+            socket.emit('waiting_for_match');
+            console.log(`[Ranked] ${username} added to the queue. Current queue size: ${rankedQueue.length}`);
+        }
+    });
+
+    // --- CUSTOM LOBBY LOGIC ---
+    socket.on('create_lobby', ({ username }) => {
+        try {
+            const { roomId, roomState } = privateLobby.createRoom({ hostUsername: username, socket });
+            socket.join(roomId);
+            console.log(`[Lobby] ${username} created lobby ${roomId}`);
+            socket.emit('lobby_state_update', { roomId, ...roomState });
+        } catch (error) { socket.emit('lobby_error', { message: error.message }); }
+    });
+
+    socket.on('join_lobby', ({ username, roomId }) => {
+        try {
+            const { roomState } = privateLobby.joinRoom({ roomId, username, socket });
+            socket.join(roomId);
+
+            console.log(`[Lobby] ${username} joined lobby ${roomId}`);
+            io.to(roomId).emit('lobby_state_update', { roomId, ...roomState });
+        } catch (error) { socket.emit('lobby_error', { message: error.message }); }
+    });
+
+    socket.on('set_ready', ({ roomId, username, isReady }) => {
+        try {
+            const { roomState } = privateLobby.setReady(roomId, username, isReady);
+            console.log(`[Lobby] ${username} in ${roomId} set ready to ${isReady}`);
+            io.to(roomId).emit('lobby_state_update', { roomId, ...roomState });
+        } catch (error) { socket.emit('lobby_error', { message: error.message }); }
+    });
+
+    socket.on('start_game', ({ roomId, username }) => {
+    try {
+        // Use the public lobby info for checks
+        const publicLobby = privateLobby.getLobbyByRoomId(roomId);
+        if (!publicLobby) throw new Error("Lobby not found.");
+        if (publicLobby.host !== username) throw new Error("Only the host can start the game.");
+        if (!privateLobby.allReady(roomId)) throw new Error("Not all players are ready.");
+
+        console.log(`[Lobby] Starting game in lobby ${roomId}`);
+        
+        const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
+        const playersState = {};
+        
+        // Get the full internal player data from the lobby
+        const playersMap = publicLobby.players;
+        
+        // This will now work because playersMap is a Map object
+        playersMap.forEach(player => {
+            playersState[player.socket.id] = { username: player.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 };
+        });
+        
+        gameRooms.set(roomId, { roomId, text, players: playersState });
+        
+        io.to(roomId).emit('game_starting', { roomId, players: playersState, text });
+        startGameLoop(roomId);
+
+    } catch (error) {
+        console.error(`[Lobby] Error starting game in ${roomId}:`, error.message);
+        socket.emit('lobby_error', { message: error.message }); 
+    }
 });
 
-app.get(/.*/, (req, res) => {
+    // Handle player progress
+    socket.on('player_progress', ({ roomId, progress, wpm }) => {
+        const room = gameRooms.get(roomId);
+        if (room && room.players[socket.id]) {
+            room.players[socket.id].progress = progress;
+            room.players[socket.id].wpm = wpm;
+            socket.to(roomId).emit('opponent_progress', { playerId: socket.id, progress, wpm });
+        }
+    });
+
+    // --- PERK USAGE ---
+    socket.on('use_perk', ({ roomId, perk }) => {
+        const room = gameRooms.get(roomId);
+        const player = room?.players[socket.id];
+
+        if (!player || player.perk !== perk) {
+            console.log(`[Perk] Invalid perk usage by ${socket.id}. Has: ${player?.perk}, Tried: ${perk}`);
+            return;
+        }
+
+        console.log(`[Perk] Player ${socket.id} used ${perk} in room ${roomId}`);
+        player.perk = null; // Consume the perk
+        player.perkUsedAt = Date.now(); // Set the cooldown timestamp
+        socket.emit('perk_used'); // Tell client the perk is gone
+
+        if (perk === 'ASTEROID_ATTACK') {
+            socket.to(roomId).emit('asteroid_hit');
+        } else if (perk === 'ROCKET_FUEL') {
+            const currentProgress = player.progress || 0;
+            const text = room.text;
+            
+            const currentLength = Math.floor(text.length * (currentProgress / 100));
+            const boostLength = Math.floor(text.length * 0.25);
+            
+            const autoCompletedText = text.substring(currentLength, currentLength + boostLength);
+
+            socket.emit('perk_effect_rocket_fuel', { autoCompletedText });
+        }
+    });
+    
+    // Handle player finishing
+    // --- MODIFIED: PLAYER FINISHED LOGIC (with Rank Updates) ---
+    // Replace your old 'player_finished' handler with this one.
+    socket.on('player_finished', async ({ roomId, wpm, accuracy }) => {
+        const room = gameRooms.get(roomId);
+        if (room && room.players[socket.id]) {
+            const playerState = room.players[socket.id];
+            if(playerState.finished) return; // Prevent finishing more than once
+
+            playerState.finished = true;
+            playerState.wpm = wpm;
+            playerState.accuracy = accuracy;
+
+            // Check if this is a ranked game and handle rank updates
+            if (room.isRanked) {
+                const opponents = Object.values(room.players).filter(p => p.username !== playerState.username);
+                const winner = playerState;
+                const loser = opponents.find(p => !p.finished) || opponents[0];
+
+                if (loser) {
+                    const newRatings = ranking.updateRatings(winner.username, loser.username, 1);
+                    winner.newRank = newRatings[winner.username];
+                    loser.newRank = newRatings[loser.username];
+                    console.log(`[Ranked] ${winner.username} wins. New rank: ${winner.newRank}. ${loser.username}'s new rank: ${loser.newRank}.`);
+                }
+            } else {
+                console.log(`Bypassing rank update for non-ranked game.`);
+            }
+
+            const allFinished = Object.values(room.players).every(p => p.finished);
+            io.to(roomId).emit('game_over', { players: room.players });
+
+            if (allFinished) {
+                stopGameLoop(roomId);
+                setTimeout(() => gameRooms.delete(roomId), 10000);
+            }
+        }
+    });
+
+    // Handle disconnects
+    socket.on('disconnect', () => {
+        console.log('user disconnected:', socket.id);
+        casualMatchmaking.removeBySocket(socket);
+        // Stop any game loops this player was in
+        for (const [roomId, room] of gameRooms.entries()) {
+            if (room.players[socket.id]) {
+                const allFinished = Object.values(room.players).every(p => p.finished || p.socket.id === socket.id);
+                if (allFinished) {
+                    stopGameLoop(roomId);
+                }
+            }
+        }
+        const affectedLobbies = privateLobby.removePlayerBySocket(socket);
+        affectedLobbies.forEach(lobby => {
+            if (lobby.roomState) {
+                io.to(lobby.roomId).emit('lobby_state_update', { roomId: lobby.roomId, ...lobby.roomState });
+            }
+        });
+    });
+});
+
+// Final catch-all to serve the React app
+app.get('/*', (req, res) => { // <--- THE ONLY CHANGE IS HERE
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
-server.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+// --- 7. Start the Server ---
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server listening on 0.0.0.0:${PORT}`);
 });

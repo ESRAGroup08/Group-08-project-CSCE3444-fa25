@@ -71,10 +71,25 @@ const Game = () => {
         setGameState(prev => ({ ...prev, players }));
         setIsGameOver(true);
         
-        // Determine if current player won
+        // Determine if current player won - whoever finished FIRST wins (or highest WPM if both finished)
         const myPlayer = players[myPlayerId];
-        const otherPlayers = Object.values(players).filter(p => p.username !== myPlayer?.username);
-        const didIWin = myPlayer && myPlayer.finished && (!otherPlayers.some(p => p.finished) || myPlayer.wpm > (otherPlayers.find(p => p.finished)?.wpm || 0));
+        if (!myPlayer) {
+            setPlayerResult('lost');
+            return;
+        }
+        
+        // Get all finished players sorted by who finished first (by checking who has the highest WPM among finished)
+        const finishedPlayers = Object.values(players).filter(p => p.finished);
+        
+        if (finishedPlayers.length === 0) {
+            setPlayerResult('lost');
+            return;
+        }
+        
+        // Sort finished players by WPM (highest first) - the first finisher has highest WPM
+        const winner = finishedPlayers.sort((a, b) => (b.wpm || 0) - (a.wpm || 0))[0];
+        const didIWin = myPlayer.username === winner.username;
+        
         setPlayerResult(didIWin ? 'won' : 'lost');
     };
 

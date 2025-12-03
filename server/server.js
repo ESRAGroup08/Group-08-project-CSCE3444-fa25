@@ -350,29 +350,39 @@ io.on('connection', (socket) => {
             playerState.wpm = wpm;
             playerState.accuracy = accuracy;
 
-            // Check if this is a ranked game and handle rank updates
-            if (room.isRanked) {
-                const opponents = Object.values(room.players).filter(p => p.username !== playerState.username);
-                const winner = playerState;
-                const loser = opponents.find(p => !p.finished) || opponents[0];
+            // Check if ALL players are finished
+            const allFinished = Object.values(room.players).every(p => p.finished);
+            
+            if (allFinished) {
+                // Determine winner based on highest WPM among all finished players
+                const finishedPlayers = Object.values(room.players).filter(p => p.finished);
+                const winner = finishedPlayers.reduce((prev, current) => 
+                    ((current.wpm || 0) > (prev.wpm || 0)) ? current : prev
+                );
+                
+                const loser = finishedPlayers.find(p => p.username !== winner.username);
 
-                if (loser) {
+                // Check if this is a ranked game and handle rank updates
+                if (room.isRanked && loser) {
                     const newRatings = ranking.updateRatings(winner.username, loser.username, 1);
                     winner.newRank = newRatings[winner.username];
                     loser.newRank = newRatings[loser.username];
-                    console.log(`[Ranked] ${winner.username} wins. New rank: ${winner.newRank}. ${loser.username}'s new rank: ${loser.newRank}.`);
+                    console.log(`[Ranked] ${winner.username} wins (${winner.wpm} WPM). New rank: ${winner.newRank}. ${loser.username}'s new rank: ${loser.newRank}.`);
+                } else {
+                    console.log(`[Game] ${winner.username} wins with ${winner.wpm} WPM!`);
                 }
-            } else {
-                console.log(`Bypassing rank update for non-ranked game.`);
-            }
 
-            const allFinished = Object.values(room.players).every(p => p.finished);
-            io.to(roomId).emit('game_over', { players: room.players });
-
-            if (allFinished) {
+                // Emit game over with final player states
+                io.to(roomId).emit('game_over', { players: room.players });
+                
                 stopGameLoop(roomId);
                 setTimeout(() => gameRooms.delete(roomId), 10000);
+            } else {
+                // Not all finished yet, just broadcast the update
+                io.to(roomId).emit('game_over', { players: room.players });
             }
+        }
+    });
         }
     });
 

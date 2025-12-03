@@ -356,9 +356,9 @@ io.on('connection', (socket) => {
             if (allFinished) {
                 // Determine winner based on highest WPM among all finished players
                 const finishedPlayers = Object.values(room.players).filter(p => p.finished);
-                const winner = finishedPlayers.reduce((prev, current) => 
-                    ((current.wpm || 0) > (prev.wpm || 0)) ? current : prev
-                );
+                const winner = finishedPlayers.reduce((prev, current) => {
+                    return ((current.wpm || 0) > (prev.wpm || 0)) ? current : prev;
+                });
                 
                 const loser = finishedPlayers.find(p => p.username !== winner.username);
 

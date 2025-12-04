@@ -70,27 +70,25 @@ const Game = () => {
     const handleGameOver = ({ players }) => {
         setGameState(prev => ({ ...prev, players }));
         setIsGameOver(true);
-        
-        // Determine if current player won - whoever finished FIRST wins (or highest WPM if both finished)
-        const myPlayer = players[myPlayerId];
-        if (!myPlayer) {
+        // 1. Convert players object to array with IDs
+        const playersWithId = Object.entries(players).map(([id, p]) => ({ ...p, id }));
+        // 2. Find myself
+        const myPlayer = playersWithId.find(p => p.id === myPlayerId);
+        // 3. Find winner
+        const finishedPlayers = playersWithId.filter(p => p.finished);
+        // Check if player exists and game is valid
+        if (myPlayer === undefined || finishedPlayers.length === 0) {
             setPlayerResult('lost');
             return;
         }
-        
-        // Get all finished players sorted by who finished first (by checking who has the highest WPM among finished)
-        const finishedPlayers = Object.values(players).filter(p => p.finished);
-        
-        if (finishedPlayers.length === 0) {
-            setPlayerResult('lost');
-            return;
-        }
-        
-        // Sort finished players by WPM (highest first) - the first finisher has highest WPM
+        // Sort descending by WPM
         const winner = finishedPlayers.sort((a, b) => (b.wpm || 0) - (a.wpm || 0))[0];
-        const didIWin = myPlayer.username === winner.username;
-        
-        setPlayerResult(didIWin ? 'won' : 'lost');
+        // 4. Compare IDs safely
+        if (winner && myPlayer.id === winner.id) {
+            setPlayerResult('won');
+        } else {
+            setPlayerResult('lost');
+        }
     };
 
     const handlePerkGranted = ({ perk }) => {
@@ -127,7 +125,7 @@ const Game = () => {
         socket.off('perk_effect_rocket_fuel', handleRocketFuel);
     };
 
-  }, [socket, roomId]);
+  }, [socket, roomId, myPlayerId]);
 
   // This function is stable and won't cause re-renders
   const sendProgress = useCallback(() => {

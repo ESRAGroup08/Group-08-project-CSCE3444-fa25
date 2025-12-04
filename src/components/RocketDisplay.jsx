@@ -5,7 +5,7 @@ const ROCKET_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#eab308'];
 
 export function RocketDisplay({ players }) {
   return (
-    <div className='relative bg-slate-950 p-6 overflow-hidden rounded-t-xl border-x border-t border-slate-700 flex flex-col'>
+    <div className='relative bg-red-600 p-6 overflow-hidden rounded-t-xl border-x border-t border-slate-700 flex flex-col'>
       {/* Background */}
       <div className='absolute inset-0 overflow-hidden'>
         <div className='absolute inset-0 bg-gradient-to-b from-indigo-950 via-purple-950 to-slate-950' />
@@ -16,9 +16,9 @@ export function RocketDisplay({ players }) {
       {/* Grid for Rockets */}
       <div className='relative grid grid-cols-4 gap-6 h-[60vh] min-h-[500px] flex-1'>
         {[...Array(4)].map((_, i) => {
-          const playerId = `player${i + 1}`;
-          // Safely get the player. If players is undefined, default to null.
-          const player = (players && players[playerId]) ? players[playerId] : null;
+          // Convert players map to array to ensure we capture all connected users
+          const playerList = players ? Object.values(players) : [];
+          const player = playerList[i];
           
           // Use 0 progress if player doesn't exist
           const progress = player ? player.progress : 0;
@@ -35,7 +35,7 @@ export function RocketDisplay({ players }) {
                 {player ? (player.name || player.username || `Player ${i + 1}`) : `Player ${i+1}`}
               </div>
 
-              <div className='relative flex-1 w-full flex items-end justify-center'>
+              <div className='relative flex-1 w-full flex justify-center'>
                 <motion.div
                   className='absolute'
                   initial={{ bottom: '0%' }}

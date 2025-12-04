@@ -2,73 +2,73 @@ import { motion } from 'motion/react';
 
 export function Rocket({ color }) {
   return (
-    <div className='relative'>
+    <div className='relative w-[80px] h-[120px]'>
       <svg
         width='80'
         height='120'
-        viewBox='0 0 80 120'
+        viewBox='0 0 60 100'
         fill='none'
         xmlns='http://www.w3.org/2000/svg'
+        className='absolute inset-0'
       >
-        {/* Rocket body */}
+        {/* FLAME GROUP: Tucked behind the body */}
+        <g>
+          <motion.g
+            initial={{ y: 0 }}
+            animate={{ y: [0, 2, 0], scaleY: [1, 1.3, 1] }}
+            transition={{
+              duration: 0.2,
+              repeat: Infinity,
+              ease: 'easeInOut',
+            }}
+            style={{ transformOrigin: '50% 80%' }}
+          >
+            {/* Outer Flame (Orange) - Centered at 30, base at y=80 */}
+            <path
+              d='M30 100 C 40 100 45 80 30 75 C 15 80 20 100 30 100 Z'
+              fill='#f97316'
+            />
+            {/* Inner Flame (Yellow) - Centered at 30, base at y=80 */}
+            <path
+              d='M30 95 C 35 95 38 82 30 78 C 22 82 25 95 30 95 Z'
+              fill='#fbbf24'
+            />
+          </motion.g>
+        </g>
+        {/* ROCKET BODY: Draws on top of the flame */}
+        {/* Main Fuselage - Centered at 30 */}
         <path
-          d='M40 10 L60 50 L60 90 L50 90 L50 100 L40 110 L30 100 L30 90 L20 90 L20 50 Z'
+          d='M30 0 C 45 0 50 30 50 60 L 50 80 L 10 80 L 10 60 C 10 30 15 0 30 0 Z'
           fill={color}
           stroke='#1f2937'
-          strokeWidth='2'
+          strokeWidth='1.5'
         />
-        {/* Rocket nose cone */}
-        <path
-          d='M40 0 L60 50 L20 50 Z'
-          fill='#94a3b8'
-          stroke='#1f2937'
-          strokeWidth='2'
-        />
-        {/* Window */}
-        <circle cx='40' cy='40' r='8' fill='#1e293b' />
-        <circle cx='40' cy='40' r='6' fill='#38bdf8' opacity='0.8' />
         {/* Fins */}
         <path
-          d='M20 70 L5 90 L20 90 Z'
+          d='M10 60 L 0 90 L 10 80 Z'
           fill='#64748b'
           stroke='#1f2937'
-          strokeWidth='2'
-        />
+          strokeWidth='1.5'
+        />{' '}
+        {/* Left Fin */}
         <path
-          d='M60 70 L75 90 L60 90 Z'
+          d='M50 60 L 60 90 L 50 80 Z'
           fill='#64748b'
           stroke='#1f2937'
-          strokeWidth='2'
+          strokeWidth='1.5'
+        />{' '}
+        {/* Right Fin */}
+        {/* Window - Centered at 30 */}
+        <circle
+          cx='30'
+          cy='30'
+          r='12'
+          fill='#e2e8f0'
+          stroke='#334155'
+          strokeWidth='1.5'
         />
+        <circle cx='30' cy='30' r='9' fill='#38bdf8' opacity='0.8' />
       </svg>
-      {/* Rocket flames */}
-      <motion.div
-        className='absolute -bottom-8 left-1/2 -translate-x-1/2'
-        animate={{
-          scale: [1, 1.2, 1],
-          opacity: [0.8, 1, 0.8],
-        }}
-        transition={{
-          duration: 0.3,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
-      >
-        <svg
-          width='60'
-          height='40'
-          viewBox='0 0 60 40'
-          fill='none'
-          xmlns='http://www.w3.org/2000/svg'
-        >
-          {/* Orange flame */}
-          <ellipse cx='30' cy='10' rx='20' ry='25' fill='#f97316' opacity='0.9' />
-          {/* Yellow flame */}
-          <ellipse cx='30' cy='8' rx='12' ry='18' fill='#fbbf24' opacity='0.9' />
-          {/* White hot center */}
-          <ellipse cx='30' cy='5' rx='6' ry='10' fill='#fef9c3' opacity='0.9' />
-        </svg>
-      </motion.div>
     </div>
   );
 }

@@ -163,6 +163,11 @@ app.get('/api/auth/status', (req, res) => {
   }
 });
 
+// Version check endpoint
+app.get('/api/version', (req, res) => {
+  res.status(200).send('1');
+});
+
 // Get user profile (example of a protected route)
 app.get('/api/users/:username', async (req, res) => {
   try {

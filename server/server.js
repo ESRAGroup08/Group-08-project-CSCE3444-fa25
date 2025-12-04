@@ -132,6 +132,7 @@ app.post('/api/register', async (req, res) => {
       });
     });
   } catch (error) {
+    console.error('--- REGISTRATION ERROR ---', error); // Detailed server-side log
     res.status(500).json({ message: 'Server error during registration.', error: error.message });
   }
 });

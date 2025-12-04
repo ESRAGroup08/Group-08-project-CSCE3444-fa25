@@ -3,41 +3,18 @@ const http = require('http');
 const { Server } = require("socket.io");
 const path = require('path');
 const cors = require('cors');
-// const mongoose = require('mongoose'); // Temporarily disabled for presentation mode
+// const mongoose = require('mongoose'); // No longer needed for in-memory mode
 const session = require('express-session');
 const passport = require('passport');
 const bcrypt = require('bcryptjs'); // Imported for in-memory hashing
-// const User = require('./models/User'); // Temporarily disabled for presentation mode
+// const User = require('./models/User'); // No longer needed for in-memory mode
 
 // --- In-Memory Database for Presentation Mode ---
-let users = [
-  {
-    id: 1,
-    name: 'Demo User',
-    email: 'demo@example.com',
-    username: 'demouser',
-    password: '$2a$10$OjqgJWVxqKVPcsPLsxKAq.iZStw04q5tR/RCgElHFABZ/N0NkHFau', // Hashed 'password123'
-    gamesPlayed: 10,
-    averageWPM: 55.7,
-    averageAccuracy: 98.2,
-  },
-  {
-    id: 2,
-    name: 'Test User',
-    email: 'test@example.com',
-    username: 'testuser',
-    password: '$2a$10$OjqgJWVxqKVPcsPLsxKAq.iZStw04q5tR/RCgElHFABZ/N0NkHFau', // Hashed 'password123'
-    gamesPlayed: 5,
-    averageWPM: 40.1,
-    averageAccuracy: 95.0,
-  }
-];
-let currentId = users.length + 1; // Start new IDs after mock users
+let users = [];
+let currentId = 1;
 // ---
 
-console.log("--- Initial In-Memory Users on Server Startup ---");
-console.log(users);
-console.log("--------------------------------------------------");
+console.log("--- RUNNING IN PRESENTATION MODE (IN-MEMORY DATABASE) ---");
 
 const app = express();
 const server = http.createServer(app);
@@ -224,32 +201,39 @@ app.get('/api/users/:username', async (req, res) => {
     res.json(userWithoutPassword);
   } catch (error) {
     console.error('--- PROFILE FETCH ERROR ---', error);
-    res.status(500).json({ message: `Server error fetching profile: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}` });
+    res.status(500).json({ message: 'Server error fetching profile.' });
   }
 });
 
-// Update user profile (mocked)
+// Update user profile
 app.put('/api/users/:username', (req, res) => {
-  const { newUsername } = req.body;
-  const userIndex = users.findIndex(u => u.username === req.params.username);
+  try {
+    const { newUsername } = req.body;
+    const userIndex = users.findIndex(u => u.username === req.params.username.toLowerCase());
 
-  if (userIndex === -1) {
-    return res.status(404).json({ message: 'User not found' });
+    if (userIndex === -1) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if the new username is already taken
+    if (users.some(u => u.username.toLowerCase() === newUsername.toLowerCase())) {
+      return res.status(400).json({ message: 'Username is already taken.' });
+    }
+
+    // Update username
+    users[userIndex].username = newUsername.toLowerCase();
+
+    const { password, ...updatedUserWithoutPassword } = users[userIndex];
+
+    console.log("Updated user (in-memory):", updatedUserWithoutPassword);
+    res.json(updatedUserWithoutPassword);
+  } catch (error) {
+    console.error('--- PROFILE UPDATE ERROR ---', error);
+    res.status(500).json({ message: 'Server error updating profile.' });
   }
-
-  // Check if the new username is already taken
-  if (users.some(u => u.username === newUsername)) {
-    return res.status(400).json({ message: 'Username is already taken.' });
-  }
-
-  // Update username
-  users[userIndex].username = newUsername;
-
-  const { password, ...updatedUserWithoutPassword } = users[userIndex];
-
-  console.log("Updated user (in-memory):", updatedUserWithoutPassword);
-  res.json(updatedUserWithoutPassword);
 });
+
+
 
 
 const PORT = process.env.PORT || 3000;

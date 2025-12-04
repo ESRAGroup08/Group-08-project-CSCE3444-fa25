@@ -26,7 +26,8 @@ const allowedOrigins = [
   "http://localhost:5175", // Additional fallback ports
   "http://localhost:5176",
   "https://group-08-project-csce3444-fa25.onrender.com", // Your main Render production URL
-  "https://group-08-multi-feat-preview.onrender.com" // Your preview Render URL
+  "https://group-08-multi-feat-preview.onrender.com", // Your preview Render URL
+  "https://group-08-project-csce3444-fa25-lncc.onrender.com" // New frontend preview URL
 ];
 
 const io = new Server(server, {

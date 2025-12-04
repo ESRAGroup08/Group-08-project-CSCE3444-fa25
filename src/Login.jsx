@@ -11,7 +11,7 @@ const Login = () => {
   const navigate = useNavigate();
   const { setUser } = useOutletContext();
 
-  const SERVER_URL = process.env.NODE_ENV === 'production'
+  const SERVER_URL = import.meta.env.MODE === 'production'
     ? 'https://group-08-project-csce3444-fa25.onrender.com'
     : 'http://localhost:3000';
 

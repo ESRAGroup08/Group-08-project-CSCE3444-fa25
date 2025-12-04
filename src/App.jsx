@@ -24,20 +24,31 @@ const socket = io(SERVER_URL, {
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
   reconnectionAttempts: 5,
-  transports: ['websocket', 'polling']
+  transports: ['websocket', 'polling'],
+  withCredentials: true
 });
 
 function App() {
   const [isConnected, setIsConnected] = useState(socket.connected);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
-    // For development: generate a random username if one doesn't exist
-    if (!localStorage.getItem('username')) {
-      const randomId = Math.floor(Math.random() * 1000);
-      const guestName = `TestPlayer_${randomId}`;
-      localStorage.setItem('username', guestName);
-      console.log(`Bypassing login. Setting username to: ${guestName}`);
-    }
+    const checkAuthStatus = async () => {
+      try {
+        const response = await fetch(`${SERVER_URL}/api/auth/status`);
+        const data = await response.json();
+        if (data.isAuthenticated) {
+          setUser(data.user);
+          console.log('User is authenticated:', data.user);
+        } else {
+          console.log('User is not authenticated.');
+        }
+      } catch (error) {
+        console.error('Error checking auth status:', error);
+      }
+    };
+
+    checkAuthStatus();
 
     const onConnect = () => {
       console.log('✅ Connected to WebSocket server!');
@@ -58,7 +69,6 @@ function App() {
     socket.on('disconnect', onDisconnect);
     socket.on('connect_error', onConnectError);
 
-    // Clean up the connection on component unmount
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
@@ -68,8 +78,7 @@ function App() {
 
   return (
     <div className="App">
-      {/* Pass the socket instance to all child routes */}
-      <Outlet context={{ socket, isConnected }} />
+      <Outlet context={{ socket, isConnected, user, setUser }} />
     </div>
   );
 }

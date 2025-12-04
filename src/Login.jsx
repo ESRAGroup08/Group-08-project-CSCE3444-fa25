@@ -1,95 +1,76 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 
 const Login = () => {
-  const navigate = useNavigate();
+  const [isLogin, setIsLogin] = useState(true);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [storedUsername, setStoredUsername] = useState('');
+  const navigate = useNavigate();
+  const { setUser } = useOutletContext();
 
-  useEffect(() => {
-    // Check if there's already a logged-in user
-    const saved = localStorage.getItem('username');
-    if (saved) {
-      setStoredUsername(saved);
-    }
-  }, []);
+  const SERVER_URL = process.env.NODE_ENV === 'production'
+    ? 'https://group-08-project-csce3444-fa25.onrender.com'
+    : 'http://localhost:3000';
 
-  const handleLogin = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    if (!username.trim()) {
-      setError('Username is required.');
-      return;
+    const url = isLogin ? `${SERVER_URL}/api/login` : `${SERVER_URL}/api/register`;
+    const payload = isLogin ? { email, password } : { name, email, username, password };
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'An error occurred.');
+      }
+
+      setUser(data.user);
+      navigate('/menu');
+
+    } catch (err) {
+      setError(err.message);
     }
-
-    // Store the username in localStorage
-    localStorage.setItem('username', username.trim());
-    console.log(`Logged in as: ${username.trim()}`);
-    navigate('/menu');
   };
-
-  const handleContinueAsStored = () => {
-    navigate('/menu');
-  };
-
-  const handleLogout = () => {
-    setStoredUsername('');
-    setUsername('');
-  };
-
-  // If already logged in, show quick continue option
-  if (storedUsername && !username) {
-    return (
-      <div className="w-full h-screen bg-gray-900 text-white flex flex-col items-center justify-center">
-        <h1 className="text-5xl font-bold mb-8">Galactic Typer</h1>
-        <div className="bg-gray-800/50 backdrop-blur border border-cyan-500/30 rounded-lg p-8 w-full max-w-sm">
-          <h2 className="text-3xl font-bold mb-6 text-center">Welcome Back</h2>
-          <p className="text-xl text-center mb-6 text-cyan-300">{storedUsername}</p>
-          <div className="flex flex-col gap-4">
-            <button 
-              onClick={handleContinueAsStored}
-              className="bg-green-500 hover:bg-green-400 text-white font-bold text-xl w-full py-3 rounded-lg transition-all">
-              Continue
-            </button>
-            <button 
-              onClick={handleLogout}
-              className="bg-red-600 hover:bg-red-500 text-white font-bold text-xl w-full py-3 rounded-lg transition-all">
-              Switch Account
-            </button>
-          </div>
-          <p className="text-xs text-gray-400 text-center mt-4">💡 Tip: Open in Incognito/Private mode to login with a different account</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="w-full h-screen bg-gray-900 text-white flex flex-col items-center justify-center">
       <h1 className="text-5xl font-bold mb-8">Galactic Typer</h1>
       <div className="bg-gray-800/50 backdrop-blur border border-cyan-500/30 rounded-lg p-8 w-full max-w-sm">
-        <h2 className="text-3xl font-bold mb-6 text-center">Enter Your Name</h2>
-        <form onSubmit={handleLogin}>
+        <h2 className="text-3xl font-bold mb-6 text-center">{isLogin ? 'Login' : 'Register'}</h2>
+        <form onSubmit={handleSubmit}>
           <div className="flex flex-col gap-4">
-            <input 
-              type="text" 
-              placeholder="Enter your username" 
-              aria-label="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoFocus
-              className="bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-            />
+            {!isLogin && (
+              <>
+                <input type="text" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required className="bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                <input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} required className="bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+              </>
+            )}
+            <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required className="bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+            <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required className="bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+            
             {error && <p className="text-red-500 text-sm text-center">{error}</p>}
-            <button 
-              type="submit"
-              className="bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-xl w-full py-3 rounded-lg mt-4 transition-all">
-              Continue
+            
+            <button type="submit" className="bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-xl w-full py-3 rounded-lg mt-4 transition-all">
+              {isLogin ? 'Login' : 'Create Account'}
             </button>
           </div>
         </form>
-        <p className="text-xs text-gray-400 text-center mt-6">💡 Tip: Open in Incognito/Private mode to play against yourself</p>
+        <p className="text-center mt-4">
+          <button onClick={() => setIsLogin(!isLogin)} className="text-cyan-300 hover:text-cyan-100">
+            {isLogin ? 'Need an account? Register' : 'Already have an account? Login'}
+          </button>
+        </p>
       </div>
     </div>
   );

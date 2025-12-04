@@ -73,7 +73,8 @@ app.use(passport.session());
 
 // Share session with Socket.IO
 io.engine.use(sessionMiddleware);
-io.engine.use(passport.session());
+// io.engine.use(passport.session()); // This middleware is for Express and likely causes crashes here. The user object should be populated on the socket from the shared session.
+
 
 const LocalStrategy = require('passport-local').Strategy;
 

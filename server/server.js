@@ -3,14 +3,15 @@ const http = require('http');
 const { Server } = require("socket.io");
 const path = require('path');
 const cors = require('cors');
-// const mongoose = require('mongoose');
+const mongoose = require('mongoose');
 const session = require('express-session');
 const passport = require('passport');
-// const GoogleStrategy = require('passport-google-oauth20').Strategy; // Bypassed
+const GoogleStrategy = require('passport-google-oauth20').Strategy; // Bypassed
 const { randomUUID } = require('crypto');
 const casualMatchmaking = require('./casualMatchmaking');
 const ranking = require('./ranking');
 const privateLobby = require('./privateLobby'); // Import the privateLobby module
+const User = require('./models/User');
 
 
 
@@ -46,47 +47,139 @@ const io = new Server(server, {
 
 
 
-/* --- ALL DATABASE AND AUTHENTICATION CODE BYPASSED FOR DEVELOPMENT --- */
-/*
 // Database Connection
-mongoose.connect('mongodb://localhost:27017/typing_game')
+mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/typing_game')
   .then(() => console.log('MongoDB connected successfully.'))
   .catch(err => console.error('MongoDB connection error:', err));
-
-// Mongoose Schemas
-const userSchema = new mongoose.Schema({ ... });
-const User = mongoose.model('User', userSchema);
-*/
 
 // --- Middleware ---
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 // Serve the static files from the React app
 app.use(express.static(path.join(__dirname, '../dist')));
-/*
-// Sessions and Passport Configuration - Bypassed
-app.use(session({
-  secret: 'a_secret_key_for_sessions_replace_this',
+
+// Reusable session middleware
+const sessionMiddleware = session({
+  secret: process.env.SESSION_SECRET || 'a_secret_key_for_sessions_replace_this',
   resave: false,
   saveUninitialized: false,
   cookie: { secure: false }
-}));
+});
+
+app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
 
+// Share session with Socket.IO
+io.engine.use(sessionMiddleware);
+io.engine.use(passport.session());
+
+const LocalStrategy = require('passport-local').Strategy;
+
+// Passport Local Strategy
+passport.use(new LocalStrategy({ usernameField: 'email' }, async (email, password, done) => {
+  try {
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return done(null, false, { message: 'Incorrect email.' });
+    }
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return done(null, false, { message: 'Incorrect password.' });
+    }
+    return done(null, user);
+  } catch (err) {
+    return done(err);
+  }
+}));
+
+// Passport Serialization
+passport.serializeUser((user, done) => {
+  done(null, user.id);
+});
+
+// Passport Deserialization
+passport.deserializeUser(async (id, done) => {
+  try {
+    const user = await User.findById(id);
+    done(null, user);
+  } catch (err) {
+    done(err);
+  }
+});
+
+// --- Auth & API Routes ---
+
+// Register New User
+app.post('/api/register', async (req, res) => {
+  const { name, email, username, password } = req.body;
+  try {
+    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User with that email or username already exists.' });
+    }
+    const newUser = new User({ name, email, username, password });
+    await newUser.save();
+    req.login(newUser, (err) => {
+      if (err) {
+        return res.status(500).json({ message: 'Session login failed after registration.' });
+      }
+      res.status(201).json({
+        message: 'User registered successfully',
+        user: { id: newUser.id, name: newUser.name, username: newUser.username, email: newUser.email }
+      });
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error during registration.', error: error.message });
+  }
+});
+
+// Login
+app.post('/api/login', passport.authenticate('local'), (req, res) => {
+  res.json({ 
+    message: 'Logged in successfully',
+    user: { id: req.user.id, name: req.user.name, username: req.user.username, email: req.user.email }
+  });
+});
+
+// Logout
+app.get('/auth/logout', (req, res, next) => {
+  req.logout(function(err) {
+    if (err) { return next(err); }
+    res.redirect('/');
+  });
+});
+
+// Auth Status
+app.get('/api/auth/status', (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json({
+      isAuthenticated: true,
+      user: { id: req.user.id, name: req.user.name, username: req.user.username, email: req.user.email }
+    });
+  } else {
+    res.json({ isAuthenticated: false });
+  }
+});
+
+// Get user profile (example of a protected route)
+app.get('/api/users/:username', async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.params.username }).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/*
 // Passport Google Strategy - Bypassed
 passport.use(new GoogleStrategy({ ... }, async (..., done) => { ... }));
-passport.serializeUser((user, done) => { ... });
-passport.deserializeUser(async (id, done) => { ... });
-
-// Auth & API Routes - Bypassed
 app.get('/auth/google', ...);
 app.get('/auth/google/callback', ...);
-app.get('/api/auth/status', ...);
-app.get('/auth/logout', ...);
-app.post('/api/login', ...);
-app.get('/api/users/:username', ...);
-app.put('/api/users/:username', ...);
 
 const friendRouter = express.Router();
 friendRouter.use(...);
@@ -94,10 +187,11 @@ friendRouter.get('/', ...);
 // ... all other friend routes
 app.use('/api/friends', friendRouter);
 */
+
 /* --- END OF BYPASSED CODE --- */
 
 const PORT = process.env.PORT || 3000;
-console.log("NOTE: MongoDB connection and all DB-related APIs are bypassed for development.");
+
 
 
 // --- Socket.IO Logic ---
@@ -154,14 +248,30 @@ function stopGameLoop(roomId) {
 io.on('connection', (socket) => {
     console.log('a user connected:', socket.id);
 
+    // Middleware to check for authenticated user
+    const user = socket.request.user;
+    if (!user) {
+        console.log(`Socket ${socket.id} is not associated with an authenticated user.`);
+        // You might want to disconnect or restrict access for unauthenticated sockets
+        // For now, we'll just log it.
+    } else {
+        console.log(`Socket ${socket.id} is authenticated as user: ${user.username}`);
+    }
+
     // Casual Matchmaking
-    socket.on('join_casual', async ({ username }) => {
+    socket.on('join_casual', async () => {
+        if (!user) {
+            return socket.emit('matchmaking_error', { message: 'You must be logged in to play.' });
+        }
         try {
-            console.log(`${username} (${socket.id}) is looking for a casual match.`);
-            const stats = { wpm: 50, accuracy: 95, gamesPlayed: 10 };
-            console.log(`Bypassing DB lookup for ${username}. Using placeholder stats.`);
+            console.log(`${user.username} (${socket.id}) is looking for a casual match.`);
+            const stats = { 
+                wpm: user.averageWPM, 
+                accuracy: user.averageAccuracy, 
+                gamesPlayed: user.gamesPlayed 
+            };
             const skillScore = ranking.computeSkillScore(stats);
-            const result = casualMatchmaking.enqueue({ socket, username, stats, skillScore });
+            const result = casualMatchmaking.enqueue({ socket, username: user.username, stats, skillScore });
 
             if (result.matched) {
                 const { self, opponent } = result;
@@ -181,7 +291,7 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('match_found', { roomId, players: roomState.players, text });
                 startGameLoop(roomId);
             } else {
-                console.log(`${username} is waiting in the queue.`);
+                console.log(`${user.username} is waiting in the queue.`);
                 socket.emit('waiting_for_match');
             }
         } catch (error) {
@@ -191,15 +301,16 @@ io.on('connection', (socket) => {
     });
 
     // --- NEW: RANKED MATCHMAKING LOGIC ---
-    // This whole block is new. It goes right after the casual matchmaking logic.
-    socket.on('join_ranked', ({ username }) => {
-        
-         // First, check if this player is already in the queue to prevent duplicates.
+    socket.on('join_ranked', () => {
+        if (!user) {
+            return socket.emit('matchmaking_error', { message: 'You must be logged in to play ranked.' });
+        }
+        const username = user.username;
+        // First, check if this player is already in the queue to prevent duplicates.
         if (rankedQueue.some(p => p.username === username)) {
             console.log(`[Ranked] ${username} is already in the queue. Ignoring duplicate request.`);
-            // Optionally, let the client know it's already waiting
             socket.emit('waiting_for_match'); 
-            return; // Stop execution here
+            return;
         }
         
         const rank = ranking.getRating(username);
@@ -208,7 +319,7 @@ io.on('connection', (socket) => {
         console.log(`[Ranked] ${username} (Rank: ${rank}) is looking for a ranked match.`);
         
         const opponentIndex = rankedQueue.findIndex(
-        p => p.username !== username && Math.abs(p.rank - rank) <= 50
+            p => p.username !== username && Math.abs(p.rank - rank) <= 50
         );
 
         if (opponentIndex !== -1) {
@@ -219,7 +330,7 @@ io.on('connection', (socket) => {
             
             const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
             const roomState = {
-                roomId, text, isRanked: true, // Flag this as a ranked game
+                roomId, text, isRanked: true,
                 players: {
                     [socket.id]: { username, rank, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
                     [opponent.socket.id]: { username: opponent.username, rank: opponent.rank, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
@@ -228,7 +339,7 @@ io.on('connection', (socket) => {
             gameRooms.set(roomId, roomState);
             socket.join(roomId);
             opponent.socket.join(roomId);
-            io.to(roomId).emit('match_found', roomState);
+io.to(roomId).emit('match_found', roomState);
             startGameLoop(roomId);
         } else {
             rankedQueue.push({ socket, username, rank });

@@ -126,7 +126,8 @@ const Profile = () => {
         </div>
         
         <div className="mt-8 text-center">
-          <Link to="/main-menu" className="text-blue-400 hover:underline">Back to Main Menu</Link>
+          {/* --- THIS IS THE FIX --- */}
+          <Link to="/menu" className="text-blue-400 hover:underline">Back to Main Menu</Link>
         </div>
       </div>
     </div>

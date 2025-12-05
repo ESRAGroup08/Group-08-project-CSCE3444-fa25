@@ -44,9 +44,16 @@ const MainMenu = () => {
                 FRIENDS
               </Link>
             </li>
+            {/* --- THIS IS THE NEW BUTTON --- */}
+            <li>
+              <Link to="/challenges" className="menu-button">
+                DAILY CHALLENGES
+              </Link>
+            </li>
+            {/* --- END OF NEW BUTTON --- */}
             <li>
               <button className="menu-button secondary" onClick={handleQuit}>
-                QUIT
+                LOG OUT
               </button>
             </li>
           </ul>

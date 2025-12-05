@@ -11,6 +11,7 @@ const { randomUUID } = require('crypto');
 const casualMatchmaking = require('./casualMatchmaking');
 const ranking = require('./ranking');
 const privateLobby = require('./privateLobby');
+const { challenges, getDailyChallenges } = require('./challenges');
 
 const app = express();
 const server = http.createServer(app);
@@ -42,14 +43,27 @@ mongoose.connect(MONGO_URI)
   .then(() => console.log('MongoDB connected successfully.'))
   .catch(err => console.error('MongoDB connection error:', err));
 
-// 2. Mongoose User Schema
-// This defines the structure of the user data in your database.
+// 2. Mongoose User Schema - MODIFIED
+const dailyChallengeSchema = new mongoose.Schema({
+  challengeId: { type: String, required: true },
+  completed: { type: Boolean, default: false },
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true, trim: true },
   gamesPlayed: { type: Number, default: 0 },
   averageWPM: { type: Number, default: 0 },
   averageAccuracy: { type: Number, default: 0 },
-  // Fields for the Friends feature (to be implemented later)
+  rankingPoints: { type: Number, default: 0 }, // For challenge rewards
+
+  dailyStats: {
+    lastLoginDate: { type: String },
+    loginStreak: { type: Number, default: 0 },
+    consecutiveWins: { type: Number, default: 0 },
+    winsToday: { type: Number, default: 0 },
+    dailyChallenges: [dailyChallengeSchema],
+  },
+  
   friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   friendRequestsSent: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   friendRequestsReceived: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
@@ -79,8 +93,37 @@ app.use(session({
 }));
 
 
+// --- Helper Function to manage daily challenges ---
+// (This function MUST be defined BEFORE the API routes that use it)
+async function checkAndResetDailyChallenges(user) {
+  const today = new Date().toDateString();
+  // Check if the user's last login was not today
+  if (user.dailyStats.lastLoginDate !== today) {
+    
+    // Check if the last login was yesterday to continue the streak
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (user.dailyStats.lastLoginDate === yesterday.toDateString()) {
+      user.dailyStats.loginStreak += 1;
+    } else {
+      user.dailyStats.loginStreak = 1; // Reset streak if it wasn't yesterday
+    }
+
+    // Reset daily stats and get new challenges
+    user.dailyStats.lastLoginDate = today;
+    user.dailyStats.dailyChallenges = getDailyChallenges(3); // Get 3 new challenges
+    user.dailyStats.consecutiveWins = 0; 
+    user.dailyStats.winsToday = 0;
+    
+    await user.save();
+    return true; // Challenges were reset
+  }
+  return false; // Challenges were not reset
+}
+
+
 // 4. API Routes for Authentication and Users
-// Simple Login: Find user or create if they don't exist
+// Simple Login: Find user or create if they don't exist - MODIFIED
 app.post('/api/login', async (req, res) => {
     const { username } = req.body;
     if (!username || !username.trim()) {
@@ -90,8 +133,11 @@ app.post('/api/login', async (req, res) => {
         let user = await User.findOne({ username });
         if (!user) {
             user = new User({ username });
-            await user.save();
         }
+        
+        // Check and update daily stats on login
+        await checkAndResetDailyChallenges(user);
+        
         // Store user info in the session
         req.session.user = { id: user._id, username: user.username };
         res.status(200).json({ message: 'Logged in successfully', username: user.username });
@@ -354,6 +400,36 @@ app.use('/api/friends', friendRouter);
 
 /* --- END OF FRIEND ROUTES --- */
 
+// --- NEW: API Endpoint for Daily Challenges ---
+app.get('/api/challenges', async (req, res) => {
+  if (!req.session.user) {
+    return res.status(401).json({ message: 'Not authenticated' });
+  }
+  try {
+    const user = await User.findById(req.session.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    // Ensure challenges are up-to-date for the day
+    await checkAndResetDailyChallenges(user);
+
+    // Populate challenges with full data from the `challenges` map
+    const populatedChallenges = user.dailyStats.dailyChallenges.map(c => {
+      const challengeData = challenges.get(c.challengeId);
+      return { ...challengeData, ...c.toObject() };
+    });
+
+    res.status(200).json({
+      loginStreak: user.dailyStats.loginStreak,
+      totalRewards: user.rankingPoints,
+      challenges: populatedChallenges,
+    });
+  } catch (error) {
+    console.error('Error fetching challenges:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 console.log("NOTE: MongoDB connection and all DB-related APIs are bypassed for development.");
 
@@ -608,48 +684,59 @@ io.on('connection', (socket) => {
         playerState.finished = true;
         playerState.wpm = wpm;
         playerState.accuracy = accuracy;
-        
+
+        const opponents = Object.values(room.players).filter(p => p.username !== playerState.username);
+        const isWin = !opponents.some(p => p.finished); // True if you finished first
+
         try {
-            // --- NEW: UPDATE PLAYER STATS ---
             const user = await User.findOne({ username: playerState.username });
-            if (user) {
-                const oldGamesPlayed = user.gamesPlayed;
-                const newGamesPlayed = oldGamesPlayed + 1;
-                
-                // Calculate new rolling average for WPM
-                const oldTotalWPM = user.averageWPM * oldGamesPlayed;
-                user.averageWPM = (oldTotalWPM + wpm) / newGamesPlayed;
-                
-                // Calculate new rolling average for Accuracy
-                const oldTotalAccuracy = user.averageAccuracy * oldGamesPlayed;
-                user.averageAccuracy = (oldTotalAccuracy + accuracy) / newGamesPlayed;
-                
-                user.gamesPlayed = newGamesPlayed;
-                
-                await user.save();
-                console.log(`[Stats] Updated stats for ${user.username}.`);
-            }
-            // --- END OF STATS UPDATE ---
+            if (!user) return;
 
-            // Handle ranked game logic
-            if (room.isRanked) {
-                const opponents = Object.values(room.players).filter(p => p.username !== playerState.username);
-                const winner = playerState;
-                // Find an opponent who has not finished yet, or just take the first one if all have
-                const loser = opponents.find(p => !p.finished) || opponents[0];
+            // 1. Update general stats
+            const oldGames = user.gamesPlayed;
+            user.averageWPM = (user.averageWPM * oldGames + wpm) / (oldGames + 1);
+            user.averageAccuracy = (user.averageAccuracy * oldGames + accuracy) / (oldGames + 1);
+            user.gamesPlayed += 1;
 
-                if (loser) {
-                    const newRatings = ranking.updateRatings(winner.username, loser.username, 1); // 1 means winner won
-                    winner.newRank = newRatings[winner.username];
-                    loser.newRank = newRatings[loser.username];
-                    console.log(`[Ranked] ${winner.username} wins. New rank: ${winner.newRank}. ${loser.username}'s new rank: ${loser.newRank}.`);
-                }
+            // 2. Update stats for challenges
+            if (isWin) {
+                user.dailyStats.consecutiveWins += 1;
+                user.dailyStats.winsToday += 1;
             } else {
-                console.log(`Bypassing rank update for non-ranked game.`);
+                user.dailyStats.consecutiveWins = 0; // Reset streak on loss
+            }
+
+            const gameStats = { wpm, accuracy, isWin };
+
+            // 3. Check daily challenges
+            user.dailyStats.dailyChallenges.forEach(challenge => {
+                if (!challenge.completed) {
+                    const challengeData = challenges.get(challenge.challengeId);
+                    if (challengeData && challengeData.check(gameStats, user)) {
+                        challenge.completed = true;
+                        user.rankingPoints += challengeData.reward;
+                        console.log(`[Challenges] ${user.username} completed '${challengeData.title}' and earned ${challengeData.reward} points.`);
+                        
+                        socket.emit('challenge_completed', { title: challengeData.title, reward: challengeData.reward });
+                    }
+                }
+            });
+
+            await user.save();
+
+            // Handle ranked game logic if applicable
+            if (room.isRanked) {
+                const loser = opponents.find(p => !p.finished) || opponents[0];
+                if (loser) {
+                    const newRatings = ranking.updateRatings(playerState.username, loser.username, 1);
+                    playerState.newRank = newRatings[playerState.username];
+                    loser.newRank = newRatings[loser.username];
+                    console.log(`[Ranked] ${playerState.username} wins. New rank: ${playerState.newRank}.`);
+                }
             }
 
         } catch (error) {
-            console.error('Error updating player stats or rank:', error);
+            console.error('Error in player_finished logic:', error);
         }
 
         // Notify clients that the game is over

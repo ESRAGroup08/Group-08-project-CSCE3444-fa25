@@ -6,11 +6,12 @@ import Login from './Login.jsx';
 import MainMenu from './components/MainMenu.jsx';
 import Lobby from './Lobby.jsx';
 import LeaderboardPage from './pages/LeaderboardPage.jsx';
-import Game from './Game.jsx'; // New import
+import Game from './Game.jsx'; 
 import ErrorDisplay from "./ErrorDisplay.jsx";
-import Profile from './Profile.jsx'; // Import the new Profile component
-import Friends from './Friends.jsx'; // Import the new Friends component
+import Profile from './Profile.jsx'; 
+import Friends from './Friends.jsx'; 
 import CustomLobby from './components/CustomLobby.jsx';
+import DailyChallenges from './DailyChallenges.jsx'; // Make sure this import is here
 import './index.css';
 
 const router = createHashRouter([
@@ -24,9 +25,10 @@ const router = createHashRouter([
       { path: '/lobby', element: <Lobby /> },
       { path: '/lobby/custom', element: <CustomLobby /> },
       { path: '/leaderboard', element: <LeaderboardPage /> },
-      { path: '/game/:roomId', element: <Game /> }, // New route
-      { path: '/profile', element: <Profile /> }, // Add the new profile route
-      { path: '/friends', element: <Friends /> }, // Add the new friends route
+      { path: '/game/:roomId', element: <Game /> },
+      { path: '/profile', element: <Profile /> },
+      { path: '/friends', element: <Friends /> },
+      { path: '/challenges', element: <DailyChallenges /> }, // And make sure this route is here
     ],
   },
 ]);

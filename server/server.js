@@ -6,7 +6,7 @@ const cors = require('cors');
 // --- DB AND AUTH ADDITIONS ---
 const mongoose = require('mongoose');
 const session = require('express-session');
-const MongoStore = require('connect-mongo');
+const MongoStore = require('connect-mongo')(session);
 // --- END ADDITIONS ---
 const { randomUUID } = require('crypto');
 const casualMatchmaking = require('./casualMatchmaking');
@@ -85,20 +85,19 @@ app.use(express.static(path.join(__dirname, '../dist')));
 // 3. Sessions Configuration
 // This middleware will create a session for each user.
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'a_default_dev_secret_key_that_is_long_and_random',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-        maxAge: 1000 * 60 * 60 * 24 * 7 // Cookie expires in 7 days
-    },
-    // 2. CONFIGURE the new store
-    store: MongoStore.create({
-        mongoUrl: process.env.MONGO_URI,
-        collectionName: 'sessions', // The name of the collection where sessions will be stored
-        ttl: 14 * 24 * 60 * 60 // Sessions will expire in 14 days
-    })
+  secret: process.env.SESSION_SECRET || 'a_default_secret_for_development',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+    maxAge: 1000 * 60 * 60 * 24 * 7 // 1 week
+  },
+  // NOTE: This line is different! We use `new MongoStore` instead of `MongoStore.create`.
+  store: new MongoStore({
+    mongooseConnection: mongoose.connection,
+    collection: 'sessions' // Optional: name of the collection to store sessions
+  })
 }));
 
 

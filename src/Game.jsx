@@ -27,13 +27,11 @@ const Game = () => {
   const { roomId } = useParams();
   const location = useLocation();
   
-  // Initialize state from router state if available
   const [gameState, setGameState] = useState(location.state || null);
   const [inputValue, setInputValue] = useState('');
   const [startTime, setStartTime] = useState(null);
   const [isGameOver, setIsGameOver] = useState(false);
   
-  // New state for perks
   const [heldPerk, setHeldPerk] = useState(null);
   const [isHitByAsteroid, setIsHitByAsteroid] = useState(false);
   const [myPlayerId, setMyPlayerId] = useState(null);
@@ -49,7 +47,6 @@ const Game = () => {
     socket.emit('use_perk', { roomId, perk: perkName });
   }, [socket, heldPerk, roomId]);
 
-  // Main game loop and socket event handler
   useEffect(() => {
     if (!socket || !roomId || roomId === 'demo') return;
 
@@ -66,8 +63,9 @@ const Game = () => {
         });
     };
     
-    const handleGameOver = ({ players }) => {
-        setGameState(prev => ({ ...prev, players }));
+    // --- MODIFIED TO CAPTURE `isRanked` ---
+    const handleGameOver = (data) => {
+        setGameState(prev => ({ ...prev, ...data }));
         setIsGameOver(true);
     };
 
@@ -81,7 +79,7 @@ const Game = () => {
 
     const handleAsteroidHit = () => {
         setIsHitByAsteroid(true);
-        setTimeout(() => setIsHitByAsteroid(false), 3000); // 3-second disruption
+        setTimeout(() => setIsHitByAsteroid(false), 3000);
     };
 
     const handleRocketFuel = ({ autoCompletedText }) => {
@@ -107,7 +105,6 @@ const Game = () => {
 
   }, [socket, roomId]);
 
-  // This function is stable and won't cause re-renders
   const sendProgress = useCallback(() => {
     if (isGameOver || !gameState || !gameState.text || !socket || !myPlayerId) return;
 
@@ -115,7 +112,6 @@ const Game = () => {
     const elapsedSeconds = startTime ? (Date.now() - startTime) / 1000 : 0;
     const wpm = elapsedSeconds > 0 ? (inputValue.length / 5) / (elapsedSeconds / 60) : 0;
 
-    // Update local visual state immediately for responsiveness
     setGameState(prev => {
         if (!prev) return prev;
         return {
@@ -127,10 +123,8 @@ const Game = () => {
         }
     });
     
-    // Send update to server
     socket.emit('player_progress', { roomId, progress, wpm });
 
-    // Check for finish
     if (inputValue.length === gameState.text.length) {
         const accuracy = Math.round(
             (gameState.text.split('').filter((char, i) => char === inputValue[i]).length / gameState.text.length) * 100
@@ -139,16 +133,14 @@ const Game = () => {
     }
   }, [inputValue, gameState, startTime, isGameOver, socket, roomId, myPlayerId]);
 
-  // Effect to send progress whenever input value changes
   useEffect(() => {
     sendProgress();
   }, [inputValue, sendProgress]);
 
-  // NEW: Effect for handling perk activation with backtick key
   useEffect(() => {
       const handleKeyPress = (e) => {
           if (e.key === '`') {
-              e.preventDefault(); // Prevents typing the character in the input
+              e.preventDefault();
               if (heldPerk) {
                   handleUsePerk(heldPerk);
               }
@@ -168,7 +160,6 @@ const Game = () => {
 
     const typedValue = e.target.value;
 
-    // Strict Typing: only allow correct characters to be added
     if (typedValue.length > inputValue.length) {
         const nextChar = typedValue.slice(-1);
         if (gameState.text[inputValue.length] === nextChar) {
@@ -176,12 +167,10 @@ const Game = () => {
             setInputValue(typedValue);
         }
     } else {
-        // Allow deletion
         setInputValue(typedValue);
     }
   };
 
-  // Loading/Error states
   if (!gameState) {
     return (
       <div className="w-full h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-4">
@@ -207,7 +196,8 @@ const Game = () => {
         {isHitByAsteroid && <AsteroidWarning />}
       </AnimatePresence>
       
-      {isGameOver && <ResultsModal players={gameState.players} />}
+      {/* --- MODIFIED TO PASS `isRanked` PROP --- */}
+      {isGameOver && <ResultsModal players={gameState.players} isRanked={gameState.isRanked} />}
       
       <main className="flex-1 flex flex-col justify-center">
         <RocketDisplay players={gameState.players} />

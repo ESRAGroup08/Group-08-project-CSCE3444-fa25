@@ -6,6 +6,7 @@ const cors = require('cors');
 // --- DB AND AUTH ADDITIONS ---
 const mongoose = require('mongoose');
 const session = require('express-session');
+const MongoStore = require('connect-mongo');
 // --- END ADDITIONS ---
 const { randomUUID } = require('crypto');
 const casualMatchmaking = require('./casualMatchmaking');
@@ -54,7 +55,9 @@ const userSchema = new mongoose.Schema({
   gamesPlayed: { type: Number, default: 0 },
   averageWPM: { type: Number, default: 0 },
   averageAccuracy: { type: Number, default: 0 },
-  rankingPoints: { type: Number, default: 0 }, // For challenge rewards
+  
+  // --- THIS IS THE NEW UNIFIED RATING FIELD ---
+  eloRating: { type: Number, default: 1000 }, 
 
   dailyStats: {
     lastLoginDate: { type: String },
@@ -82,14 +85,20 @@ app.use(express.static(path.join(__dirname, '../dist')));
 // 3. Sessions Configuration
 // This middleware will create a session for each user.
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'a_secret_key_for_sessions_replace_this_in_production',
-  resave: false,
-  saveUninitialized: false, // Don't create session until something stored
-  cookie: { 
-    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-    httpOnly: true, // Prevents client-side JS from reading the cookie
-    maxAge: 1000 * 60 * 60 * 24 * 7 // Cookie expires in 7 days
-  }
+    secret: process.env.SESSION_SECRET || 'a_default_dev_secret_key_that_is_long_and_random',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+        maxAge: 1000 * 60 * 60 * 24 * 7 // Cookie expires in 7 days
+    },
+    // 2. CONFIGURE the new store
+    store: MongoStore.create({
+        mongoUrl: process.env.MONGO_URI,
+        collectionName: 'sessions', // The name of the collection where sessions will be stored
+        ttl: 14 * 24 * 60 * 60 // Sessions will expire in 14 days
+    })
 }));
 
 
@@ -430,6 +439,21 @@ app.get('/api/challenges', async (req, res) => {
   }
 });
 
+app.get('/api/leaderboard', async (req, res) => {
+    try {
+        const topPlayers = await User.find({})
+            .sort({ eloRating: -1 }) // Sort by eloRating
+            .limit(25)
+            .select('username eloRating averageWPM'); // Select the new field
+
+        res.status(200).json(topPlayers);
+    } catch (error) {
+        console.error('Error fetching leaderboard data:', error);
+        res.status(500).json({ message: 'Server error fetching leaderboard.' });
+    }
+});
+
+
 const PORT = process.env.PORT || 3000;
 console.log("NOTE: MongoDB connection and all DB-related APIs are bypassed for development.");
 
@@ -526,48 +550,56 @@ io.on('connection', (socket) => {
 
     // --- NEW: RANKED MATCHMAKING LOGIC ---
     // This whole block is new. It goes right after the casual matchmaking logic.
-    socket.on('join_ranked', ({ username }) => {
-        
-         // First, check if this player is already in the queue to prevent duplicates.
-        if (rankedQueue.some(p => p.username === username)) {
-            console.log(`[Ranked] ${username} is already in the queue. Ignoring duplicate request.`);
-            // Optionally, let the client know it's already waiting
-            socket.emit('waiting_for_match'); 
-            return; // Stop execution here
-        }
-        
-        const rank = ranking.getRating(username);
-        ranking.ensurePlayer(username);
-
-        console.log(`[Ranked] ${username} (Rank: ${rank}) is looking for a ranked match.`);
-        
-        const opponentIndex = rankedQueue.findIndex(
-        p => p.username !== username && Math.abs(p.rank - rank) <= 50
-        );
-
-        if (opponentIndex !== -1) {
-            const opponent = rankedQueue.splice(opponentIndex, 1)[0];
+    socket.on('join_ranked', async ({ username }) => { // Note: this is now an async function
+        try {
+            // First, check if this player is already in the queue to prevent duplicates.
+            if (rankedQueue.some(p => p.username === username)) {
+                console.log(`[Ranked] ${username} is already in the queue. Ignoring duplicate request.`);
+                socket.emit('waiting_for_match'); 
+                return; // Stop execution here
+            }
             
-            const roomId = randomUUID();
-            console.log(`[Ranked] Match found! Room: ${roomId}, Players: ${username} vs ${opponent.username}`);
+            // Get the user's rating directly from the database via our async helper
+            const rank = await ranking.getRating(username);
+
+            console.log(`[Ranked] ${username} (ELO: ${rank}) is looking for a ranked match.`);
             
-            const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
-            const roomState = {
-                roomId, text, isRanked: true, // Flag this as a ranked game
-                players: {
-                    [socket.id]: { username, rank, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
-                    [opponent.socket.id]: { username: opponent.username, rank: opponent.rank, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
-                }
-            };
-            gameRooms.set(roomId, roomState);
-            socket.join(roomId);
-            opponent.socket.join(roomId);
-            io.to(roomId).emit('match_found', roomState);
-            startGameLoop(roomId);
-        } else {
-            rankedQueue.push({ socket, username, rank });
-            socket.emit('waiting_for_match');
-            console.log(`[Ranked] ${username} added to the queue. Current queue size: ${rankedQueue.length}`);
+            // Find an opponent in the queue with a similar rank (e.g., within 100 ELO points)
+            const opponentIndex = rankedQueue.findIndex(
+                p => p.username !== username && Math.abs(p.rank - rank) <= 100
+            );
+
+            if (opponentIndex !== -1) {
+                // --- MATCH FOUND ---
+                const opponent = rankedQueue.splice(opponentIndex, 1)[0];
+                
+                const roomId = randomUUID();
+                console.log(`[Ranked] Match found! Room: ${roomId}, Players: ${username} vs ${opponent.username}`);
+                
+                const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
+                const roomState = {
+                    roomId, 
+                    text, 
+                    isRanked: true, // Flag this as a ranked game
+                    players: {
+                        [socket.id]: { username, rank, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
+                        [opponent.socket.id]: { username: opponent.username, rank: opponent.rank, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
+                    }
+                };
+                gameRooms.set(roomId, roomState);
+                socket.join(roomId);
+                opponent.socket.join(roomId);
+                io.to(roomId).emit('match_found', roomState);
+                startGameLoop(roomId);
+            } else {
+                // --- NO MATCH FOUND, ADD TO QUEUE ---
+                rankedQueue.push({ socket, username, rank });
+                socket.emit('waiting_for_match');
+                console.log(`[Ranked] ${username} added to the queue. Current queue size: ${rankedQueue.length}`);
+            }
+        } catch(error) {
+            console.error('[Ranked] Error during matchmaking:', error);
+            socket.emit('matchmaking_error', { message: 'An error occurred in ranked matchmaking.' });
         }
     });
 
@@ -672,80 +704,89 @@ io.on('connection', (socket) => {
     });
     
     // Handle player finishing
-    // --- MODIFIED: PLAYER FINISHED LOGIC (with Rank Updates) ---
-    // Replace your old 'player_finished' handler with this one.
     socket.on('player_finished', async ({ roomId, wpm, accuracy }) => {
         const room = gameRooms.get(roomId);
         if (!room || !room.players[socket.id]) return;
 
-        const playerState = room.players[socket.id];
-        if (playerState.finished) return; // Prevent finishing more than once
+        const finisherState = room.players[socket.id];
+        if (finisherState.finished) return; // Prevent finishing more than once
 
-        playerState.finished = true;
-        playerState.wpm = wpm;
-        playerState.accuracy = accuracy;
-
-        const opponents = Object.values(room.players).filter(p => p.username !== playerState.username);
-        const isWin = !opponents.some(p => p.finished); // True if you finished first
-
+        finisherState.finished = true;
+        finisherState.wpm = wpm;
+        finisherState.accuracy = accuracy;
+        
+        const opponents = Object.values(room.players).filter(p => p.username !== finisherState.username);
+        const allFinished = Object.values(room.players).every(p => p.finished);
+        
         try {
-            const user = await User.findOne({ username: playerState.username });
-            if (!user) return;
+            // --- ELO RATING UPDATE LOGIC (FOR RANKED GAMES) ---
+            // This now runs as soon as the first player finishes.
+            if (room.isRanked && opponents.length > 0) {
+                const winnerState = finisherState; // The first to finish is the winner
+                const loserState = opponents[0];   // The other player is the loser
 
-            // 1. Update general stats
-            const oldGames = user.gamesPlayed;
-            user.averageWPM = (user.averageWPM * oldGames + wpm) / (oldGames + 1);
-            user.averageAccuracy = (user.averageAccuracy * oldGames + accuracy) / (oldGames + 1);
-            user.gamesPlayed += 1;
-
-            // 2. Update stats for challenges
-            if (isWin) {
-                user.dailyStats.consecutiveWins += 1;
-                user.dailyStats.winsToday += 1;
-            } else {
-                user.dailyStats.consecutiveWins = 0; // Reset streak on loss
+                // Only calculate ELO once, when the winner finishes.
+                // We check if the opponent has a `newElo` property, which we will add.
+                // If they do, it means ELO was already calculated for this match.
+                if (!loserState.newElo) { 
+                    console.log(`[Ranked] ${winnerState.username} finished first. Calculating ELO...`);
+                    
+                    const newRatings = await ranking.updateRatings(winnerState.username, loserState.username);
+                    
+                    // Attach the new ELO to the room state so clients can see the change.
+                    winnerState.newElo = newRatings[winnerState.username];
+                    loserState.newElo = newRatings[loserState.username];
+                    
+                    console.log(`[Ranked] New ELO -> ${winnerState.username}: ${winnerState.newElo}, ${loserState.username}: ${loserState.newElo}`);
+                }
             }
 
-            const gameStats = { wpm, accuracy, isWin };
+            // --- GENERAL STATS AND DAILY CHALLENGE UPDATE ---
+            const user = await User.findOne({ username: finisherState.username });
+            if (user) {
+                const isWin = !opponents.some(p => p.finished); // Still useful for challenges
 
-            // 3. Check daily challenges
-            user.dailyStats.dailyChallenges.forEach(challenge => {
-                if (!challenge.completed) {
-                    const challengeData = challenges.get(challenge.challengeId);
-                    if (challengeData && challengeData.check(gameStats, user)) {
-                        challenge.completed = true;
-                        user.rankingPoints += challengeData.reward;
-                        console.log(`[Challenges] ${user.username} completed '${challengeData.title}' and earned ${challengeData.reward} points.`);
-                        
-                        socket.emit('challenge_completed', { title: challengeData.title, reward: challengeData.reward });
+                // Update general stats
+                const oldGames = user.gamesPlayed;
+                user.averageWPM = (user.averageWPM * oldGames + wpm) / (oldGames + 1);
+                user.averageAccuracy = (user.averageAccuracy * oldGames + accuracy) / (oldGames + 1);
+                user.gamesPlayed += 1;
+
+                if (isWin) {
+                    user.dailyStats.consecutiveWins += 1;
+                    user.dailyStats.winsToday += 1;
+                } else {
+                    user.dailyStats.consecutiveWins = 0;
+                }
+                
+                // Check and apply daily challenge rewards
+                const gameStats = { wpm, accuracy, isWin };
+                for (const challenge of user.dailyStats.dailyChallenges) {
+                    if (!challenge.completed) {
+                        const challengeData = challenges.get(challenge.challengeId);
+                        if (challengeData && challengeData.check(gameStats, user)) {
+                            challenge.completed = true;
+                            // Add reward to the user's ELO
+                            user.eloRating += challengeData.reward;
+                            console.log(`[Challenges] ${user.username} completed '${challengeData.title}' and gained ${challengeData.reward} ELO.`);
+                            socket.emit('challenge_completed', { title: challengeData.title, reward: challengeData.reward });
+                        }
                     }
                 }
-            });
-
-            await user.save();
-
-            // Handle ranked game logic if applicable
-            if (room.isRanked) {
-                const loser = opponents.find(p => !p.finished) || opponents[0];
-                if (loser) {
-                    const newRatings = ranking.updateRatings(playerState.username, loser.username, 1);
-                    playerState.newRank = newRatings[playerState.username];
-                    loser.newRank = newRatings[loser.username];
-                    console.log(`[Ranked] ${playerState.username} wins. New rank: ${playerState.newRank}.`);
-                }
+                await user.save();
             }
 
         } catch (error) {
             console.error('Error in player_finished logic:', error);
         }
 
-        // Notify clients that the game is over
+        // Notify clients about the game state. Now includes ELO changes.
         io.to(roomId).emit('game_over', { players: room.players });
 
-        const allFinished = Object.values(room.players).every(p => p.finished);
+        // Clean up the room if everyone has finished
         if (allFinished) {
             stopGameLoop(roomId);
-            setTimeout(() => gameRooms.delete(roomId), 10000); // Clean up room after 10s
+            setTimeout(() => gameRooms.delete(roomId), 10000);
         }
     });
 

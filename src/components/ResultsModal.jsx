@@ -1,71 +1,90 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Crown } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Link } from 'react-router-dom';
+import { Award, TrendingUp, TrendingDown } from 'lucide-react';
 
-const ResultsModal = ({ players }) => {
-  const navigate = useNavigate();
-
-  if (!players) return null;
-
-  // Convert players map to an array and sort to determine the winner
-  const sortedPlayers = Object.values(players)
-    .filter(p => p) // Filter out null/undefined players
-    .sort((a, b) => {
-      if (a.finished && !b.finished) return -1;
-      if (!a.finished && b.finished) return 1;
-      if (a.finished && b.finished) return b.wpm - a.wpm;
-      return b.progress - a.progress;
-    });
-
+const ResultsModal = ({ players, isRanked }) => {
+  const sortedPlayers = Object.values(players).sort((a, b) => b.wpm - a.wpm);
   const winner = sortedPlayers[0];
 
   return (
-    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="w-full max-w-lg bg-gray-800/90 border-2 border-cyan-500/50 rounded-lg p-8 text-white">
-        <div className="text-center">
-          <h2 className="text-4xl font-bold mb-2">Game Over!</h2>
-          <div className="flex items-center justify-center gap-3 text-2xl text-yellow-400 font-bold mb-6">
-            <Crown className="w-8 h-8" />
-            <span>{winner.username} wins!</span>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          {sortedPlayers.map((player, index) => (
-            <div key={player.username} className="bg-gray-700/50 p-3 rounded-lg flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="font-bold text-lg w-6">{index + 1}.</span>
-                <span className="text-lg">{player.username}</span>
-              </div>
-              <div className="text-right">
-                <div className="font-bold text-cyan-300">{player.wpm} WPM</div>
-                
-                {/* --- NEW: Conditional display for Rank or Accuracy --- */}
-                {player.newRank !== undefined ? (
-                  <div className="text-sm font-bold">
-                    <span className="text-slate-400">{player.rank} → </span>
-                    <span className={player.newRank > player.rank ? "text-green-400" : "text-red-400"}>
-                      {player.newRank}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="text-sm text-slate-400">{player.accuracy || 0}% Accuracy</div>
-                )}
-              </div>
+    <AnimatePresence>
+      <motion.div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-40 p-4"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+      >
+        <motion.div
+          className="bg-gray-800 border-2 border-cyan-500 rounded-2xl shadow-2xl w-full max-w-2xl text-white p-8"
+          initial={{ scale: 0.8, y: -50, opacity: 0 }}
+          animate={{ scale: 1, y: 0, opacity: 1 }}
+          transition={{ delay: 0.2, type: 'spring', stiffness: 120 }}
+        >
+          <div className="text-center mb-6">
+            <h1 className="text-5xl font-bold text-cyan-300">Game Over</h1>
+            <div className="flex items-center justify-center gap-3 mt-4 text-2xl">
+              <Award className="text-yellow-400" size={30} />
+              <span className="font-bold">{winner.username}</span> wins!
             </div>
-          ))}
-        </div>
+          </div>
 
-        <div className="mt-8 flex justify-center">
-          <button
-            onClick={() => navigate('/menu')}
-            className="bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xl py-3 px-12 rounded-lg transition-all"
-          >
-            Return to Menu
-          </button>
-        </div>
-      </div>
-    </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="border-b-2 border-gray-600">
+                <tr>
+                  <th className="p-3 text-lg">Player</th>
+                  <th className="p-3 text-lg text-center">WPM</th>
+                  <th className="p-3 text-lg text-center">Accuracy</th>
+                  {/* --- NEW: Conditionally render ELO column header --- */}
+                  {isRanked && <th className="p-3 text-lg text-center">ELO Change</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedPlayers.map((player) => {
+                  const eloChange = player.newElo ? player.newElo - player.rank : null;
+
+                  return (
+                    <tr key={player.username} className="border-t border-gray-700">
+                      <td className="p-4 text-xl font-semibold">{player.username}</td>
+                      <td className="p-4 text-xl text-center">{player.wpm}</td>
+                      <td className="p-4 text-xl text-center">{player.accuracy}%</td>
+                      
+                      {/* --- NEW: Conditionally render ELO data for each player --- */}
+                      {isRanked && (
+                        <td className="p-4 text-xl text-center font-mono">
+                          {eloChange !== null ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <span>{player.rank}</span>
+                              <span className={eloChange >= 0 ? 'text-green-400' : 'text-red-500'}>
+                                ({eloChange >= 0 ? '+' : ''}{eloChange})
+                              </span>
+                              {eloChange >= 0 ? <TrendingUp size={20} className="text-green-500"/> : <TrendingDown size={20} className="text-red-600"/>}
+                              <span>→ {player.newElo}</span>
+                            </div>
+                          ) : (
+                            <span>--</span> // Show placeholder if data isn't available
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-8 text-center">
+            <Link 
+              to="/menu" 
+              className="bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-xl px-12 py-3 rounded-lg transition-transform transform hover:scale-105"
+            >
+              Return to Menu
+            </Link>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
   );
 };
 

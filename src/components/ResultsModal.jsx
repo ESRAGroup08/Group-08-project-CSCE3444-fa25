@@ -101,16 +101,7 @@ const ResultsModal = ({ players, myPlayerId, playerResult }) => {
                 <div className="text-right">
                   <div className="font-bold text-cyan-300">{Math.round(player.wpm || 0)} WPM</div>
                   
-                  {player.newRank !== undefined ? (
-                    <div className="text-sm font-bold">
-                      <span className="text-slate-400">{player.rank} → </span>
-                      <span className={player.newRank > player.rank ? "text-green-400" : "text-red-400"}>
-                        {player.newRank}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="text-sm text-slate-400">{Math.round(player.accuracy || 0)}% Accuracy</div>
-                  )}
+
                 </div>
               </motion.div>
             );

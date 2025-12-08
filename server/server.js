@@ -517,22 +517,39 @@ function stopGameLoop(roomId) {
 io.on('connection', (socket) => {
     console.log('a user connected:', socket.id);
 
-    // Casual Matchmaking
+    // --- UPDATED Casual Matchmaking ---
     socket.on('join_casual', async ({ username }) => {
         try {
-            console.log(`${username} (${socket.id}) is looking for a casual match.`);
-            const stats = { wpm: 50, accuracy: 95, gamesPlayed: 10 };
-            console.log(`Bypassing DB lookup for ${username}. Using placeholder stats.`);
-            const skillScore = ranking.computeSkillScore(stats);
-            const result = casualMatchmaking.enqueue({ socket, username, stats, skillScore });
+            console.log(`[Casual] ${username} (${socket.id}) is looking for a casual match.`);
+            
+            // 1. Fetch user from the database to get real stats
+            const user = await User.findOne({ username });
+            if (!user) {
+                // Use placeholder stats if user not found, for robustness
+                const stats = { averageWPM: 50, averageAccuracy: 95 };
+                console.log(`[Casual] User ${username} not found. Using placeholder stats.`);
+            }
+
+            // 2. Use a simple skill score for casual. Average WPM is a good metric.
+            const skillScore = user ? user.averageWPM : 50;
+            
+            const result = casualMatchmaking.enqueue({ 
+                socket, 
+                username, 
+                stats: { wpm: user.averageWPM, accuracy: user.averageAccuracy }, 
+                skillScore 
+            });
 
             if (result.matched) {
                 const { self, opponent } = result;
                 const roomId = randomUUID();
-                console.log(`Match found! Room: ${roomId}, Players: ${self.username}, ${opponent.username}`);
+                console.log(`[Casual] Match found! Room: ${roomId}, Players: ${self.username}, ${opponent.username}`);
+                
                 const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
                 const roomState = {
-                    roomId, text,
+                    roomId, 
+                    text,
+                    isRanked: false, // Explicitly mark as not ranked
                     players: {
                         [self.socket.id]: { username: self.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
                         [opponent.socket.id]: { username: opponent.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
@@ -541,14 +558,14 @@ io.on('connection', (socket) => {
                 gameRooms.set(roomId, roomState);
                 self.socket.join(roomId);
                 opponent.socket.join(roomId);
-                io.to(roomId).emit('match_found', { roomId, players: roomState.players, text });
+                io.to(roomId).emit('match_found', roomState);
                 startGameLoop(roomId);
             } else {
-                console.log(`${username} is waiting in the queue.`);
+                console.log(`[Casual] ${username} is waiting in the queue.`);
                 socket.emit('waiting_for_match');
             }
         } catch (error) {
-            console.error('Error during matchmaking:', error);
+            console.error('Error during casual matchmaking:', error);
             socket.emit('matchmaking_error', { message: 'An error occurred while trying to find a match.' });
         }
     });
@@ -795,19 +812,31 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Handle disconnects
+    // --- UPDATED Disconnect Handler ---
     socket.on('disconnect', () => {
         console.log('user disconnected:', socket.id);
+        
+        // Remove user from matchmaking queues
         casualMatchmaking.removeBySocket(socket);
-        // Stop any game loops this player was in
+        // (You would add a similar line here for the ranked queue if you implement it fully)
+
+        // Handle disconnects from active game rooms
         for (const [roomId, room] of gameRooms.entries()) {
             if (room.players[socket.id]) {
-                const allFinished = Object.values(room.players).every(p => p.finished || p.socket.id === socket.id);
-                if (allFinished) {
+                console.log(`[Disconnect] Player ${socket.id} left room ${roomId}.`);
+                // You can add logic here to notify other players that their opponent disconnected.
+                // For now, we'll just clean up the game loop if they were the last one.
+                const remainingPlayerIds = Object.keys(room.players).filter(id => id !== socket.id);
+                
+                if (remainingPlayerIds.length === 0) {
+                    console.log(`[Disconnect] Last player left room ${roomId}. Stopping game loop.`);
                     stopGameLoop(roomId);
+                    gameRooms.delete(roomId);
                 }
             }
         }
+        
+        // Handle disconnects from private lobbies
         const affectedLobbies = privateLobby.removePlayerBySocket(socket);
         affectedLobbies.forEach(lobby => {
             if (lobby.roomState) {

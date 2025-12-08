@@ -20,7 +20,8 @@ const server = http.createServer(app);
 const allowedOrigins = [
   "http://localhost:5173",
   "https://group-08-project-csce3444-fa25.onrender.com",
-  "https://group-08-multi-feat-preview.onrender.com"
+  "https://group-08-multi-feat-preview.onrender.com",
+  "https://galatictyper.onrender.com" // <-- ADD THIS LINE
 ];
 
 const io = new Server(server, {
@@ -76,8 +77,8 @@ const User = mongoose.model('User', userSchema);
 
 // --- Middleware ---
 app.use(cors({ 
-    origin: allowedOrigins,
-    credentials: true // Allow cookies to be sent
+    origin: allowedOrigins, // Make sure this uses the updated array
+    credentials: true 
 }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));

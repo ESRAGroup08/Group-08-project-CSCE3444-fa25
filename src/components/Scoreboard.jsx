@@ -22,7 +22,6 @@ function Scoreboard() {
               <th>Rank</th>
               <th>Player</th>
               <th>WPM</th>
-              <th>Accuracy</th>
             </tr>
           </thead>
           <tbody>
@@ -31,7 +30,6 @@ function Scoreboard() {
                 <td>{index + 1}</td>
                 <td>{player.username}</td>
                 <td>{player.wpm}</td>
-                <td>{player.accuracy}%</td>
               </tr>
             ))}
           </tbody>

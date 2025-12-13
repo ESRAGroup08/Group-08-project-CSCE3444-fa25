@@ -26,18 +26,53 @@ const Game = () => {
   const { socket } = useOutletContext();
   const { roomId } = useParams();
   const location = useLocation();
-  
+
   // Initialize state from router state if available
   const [gameState, setGameState] = useState(location.state || null);
   const [inputValue, setInputValue] = useState('');
   const [startTime, setStartTime] = useState(null);
   const [isGameOver, setIsGameOver] = useState(false);
-  
+
   // New state for perks
   const [heldPerk, setHeldPerk] = useState(null);
   const [isHitByAsteroid, setIsHitByAsteroid] = useState(false);
   const [myPlayerId, setMyPlayerId] = useState(null);
   const [playerResult, setPlayerResult] = useState(null); // 'won' or 'lost'
+  const [suddenDeathTime, setSuddenDeathTime] = useState(null);
+  const [isMatchmaking, setIsMatchmaking] = useState(true);
+  const [matchmakingMessage, setMatchmakingMessage] = useState('');
+
+  useEffect(() => {
+    if (roomId === 'demo') {
+      setIsMatchmaking(false);
+      return;
+    }
+
+    const performMatchmaking = async () => {
+      console.log('Searching for opponents...');
+      setMatchmakingMessage('Searching for opponents...');
+      await new Promise(resolve => setTimeout(resolve, 15000));
+
+      console.log('Match Found: Zorgon the Swift');
+      setMatchmakingMessage('Match Found: Zorgon the Swift');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      for (let i = 3; i > 0; i--) {
+        console.log(i);
+        setMatchmakingMessage(String(i));
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      console.log('Launch!');
+      setMatchmakingMessage('Launch!');
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      setStartTime(Date.now()); // Set global start time
+      setIsMatchmaking(false);
+    };
+
+    performMatchmaking();
+  }, [roomId]);
 
   useEffect(() => {
     if (socket) {
@@ -54,14 +89,18 @@ const Game = () => {
   useEffect(() => {
     if (!socket || !roomId || roomId === 'demo') return;
 
-    const handleOpponentProgress = ({ playerId, progress, wpm }) => {
+    const handleOpponentProgress = ({ playerId, progress, wpm, finished }) => {
         setGameState(prev => {
             if (!prev || !prev.players[playerId]) return prev;
+            const updatedPlayer = { ...prev.players[playerId], progress, wpm: Math.round(wpm) };
+            if (finished) {
+                updatedPlayer.finished = true;
+            }
             return {
                 ...prev,
                 players: {
                     ...prev.players,
-                    [playerId]: { ...prev.players[playerId], progress, wpm: Math.round(wpm) }
+                    [playerId]: updatedPlayer
                 }
             };
         });
@@ -108,12 +147,19 @@ const Game = () => {
         setInputValue(prev => prev + autoCompletedText);
     };
 
+    const handleSuddenDeath = ({ duration }) => {
+        if (isGameOver) return;
+        console.log(`Sudden Death! ${duration} seconds remaining`);
+        setSuddenDeathTime(duration);
+    };
+
     socket.on('opponent_progress', handleOpponentProgress);
     socket.on('game_over', handleGameOver);
     socket.on('perk_granted', handlePerkGranted);
     socket.on('perk_used', handlePerkUsed);
     socket.on('asteroid_hit', handleAsteroidHit);
     socket.on('perk_effect_rocket_fuel', handleRocketFuel);
+    socket.on('suddenDeath', handleSuddenDeath);
 
 
     return () => {
@@ -123,13 +169,31 @@ const Game = () => {
         socket.off('perk_used', handlePerkUsed);
         socket.off('asteroid_hit', handleAsteroidHit);
         socket.off('perk_effect_rocket_fuel', handleRocketFuel);
+        socket.off('suddenDeath', handleSuddenDeath);
     };
 
-  }, [socket, roomId, myPlayerId]);
+  }, [socket, roomId, myPlayerId, isGameOver]);
+
+  useEffect(() => {
+    if (suddenDeathTime && suddenDeathTime > 0) {
+      const interval = setInterval(() => {
+        setSuddenDeathTime(prevTime => (prevTime > 0 ? prevTime - 1 : 0));
+      }, 1000);
+      return () => clearInterval(interval);
+    } else if (suddenDeathTime === 0) {
+      setSuddenDeathTime(null);
+    }
+  }, [suddenDeathTime]);
+
 
   // This function is stable and won't cause re-renders
   const sendProgress = useCallback(() => {
     if (isGameOver || !gameState || !gameState.text || !socket || !myPlayerId) return;
+
+    // Freeze stats once the player has finished
+    if (gameState.players[myPlayerId] && gameState.players[myPlayerId].finished) {
+      return;
+    }
 
     const progress = ((inputValue.length / gameState.text.length) * 100);
     const elapsedSeconds = startTime ? (Date.now() - startTime) / 1000 : 0;
@@ -183,8 +247,10 @@ const Game = () => {
   }, [heldPerk, handleUsePerk]);
 
 
+  const myPlayer = gameState && myPlayerId ? gameState.players[myPlayerId] : null;
+
   const handleInputChange = (e) => {
-    if (isGameOver || !gameState || !gameState.text || isHitByAsteroid) return;
+    if (isGameOver || !gameState || !gameState.text || isHitByAsteroid || (myPlayer && myPlayer.finished)) return;
 
     const typedValue = e.target.value;
 
@@ -192,7 +258,6 @@ const Game = () => {
     if (typedValue.length > inputValue.length) {
         const nextChar = typedValue.slice(-1);
         if (gameState.text[inputValue.length] === nextChar) {
-            if (!startTime) setStartTime(Date.now());
             setInputValue(typedValue);
         }
     } else {
@@ -223,11 +288,27 @@ const Game = () => {
 
   return (
     <div className="w-full min-h-screen bg-gray-900 flex flex-col relative w-full max-w-[95%] mx-auto py-8">
+      {isMatchmaking && (
+        <div className="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center text-white">
+          <div className="text-4xl font-bold animate-pulse">{matchmakingMessage}</div>
+        </div>
+      )}
       <AnimatePresence>
         {isHitByAsteroid && <AsteroidWarning />}
       </AnimatePresence>
       
-      {isGameOver && <ResultsModal players={gameState.players} myPlayerId={myPlayerId} playerResult={playerResult} />}
+      {(myPlayer?.finished || isGameOver) && <ResultsModal players={gameState.players} myPlayerId={myPlayerId} playerResult={playerResult} isGameOver={isGameOver} suddenDeathTime={suddenDeathTime} />}
+      
+      {suddenDeathTime && !isGameOver && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-red-600/90 backdrop-blur-sm border-2 border-red-400 rounded-lg p-6 text-white shadow-lg">
+              <h3 className="text-3xl font-bold text-center mb-2">SUDDEN DEATH</h3>
+              {myPlayer && myPlayer.finished ? (
+                <p className="text-xl text-center font-bold text-yellow-300">Waiting for others...</p>
+              ) : (
+                <p className="text-xl text-center">Game ends in <span className="font-bold text-yellow-300">{suddenDeathTime}</span> seconds!</p>
+              )}
+          </div>
+      )}
       
       <main className="flex-1 flex flex-col justify-center">
         <RocketDisplay players={gameState.players} />
@@ -238,6 +319,7 @@ const Game = () => {
           progress={progress}
           heldPerk={heldPerk}
           onUsePerk={handleUsePerk}
+          disabled={isMatchmaking} // Disable input during matchmaking
         />
       </main>
     </div>

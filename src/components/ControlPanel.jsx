@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react';
 import { Zap, Rocket, Gauge, AlertTriangle, ShieldOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -6,9 +7,17 @@ export function ControlPanel({
   inputValue, 
   onInputChange, 
   progress,
-  heldPerk, // New prop
-  onUsePerk, // New prop
+  heldPerk, 
+  onUsePerk,
+  disabled, // New prop for disabling input
 }) {
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (!disabled) {
+      inputRef.current?.focus();
+    }
+  }, [disabled]);
 
   const handleActivatePerk = (perkName) => {
     if (onUsePerk) {
@@ -135,13 +144,14 @@ export function ControlPanel({
                 INPUT TERMINAL
               </div>
               <input
+                ref={inputRef}
                 type='text'
                 value={inputValue}
                 onChange={onInputChange}
                 placeholder='► TYPE HERE TO LAUNCH...'
                 className='w-full bg-slate-950 border-2 border-slate-700 rounded-lg px-4 py-3 text-green-400 placeholder-slate-600 focus:outline-none focus:border-green-500 transition-colors tracking-widest'
-                autoFocus
                 autoComplete="off"
+                disabled={disabled} // Apply the disabled prop here
               />
             </div>
           </div>

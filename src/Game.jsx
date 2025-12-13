@@ -67,6 +67,7 @@ const Game = () => {
       setMatchmakingMessage('Launch!');
       await new Promise(resolve => setTimeout(resolve, 500));
 
+      setStartTime(Date.now()); // Set global start time
       setIsMatchmaking(false);
     };
 
@@ -146,9 +147,9 @@ const Game = () => {
         setInputValue(prev => prev + autoCompletedText);
     };
 
-    const handleFinalCountdown = ({ duration }) => {
+    const handleSuddenDeath = ({ duration }) => {
         if (isGameOver) return;
-        console.log(`${duration} seconds remaining`);
+        console.log(`Sudden Death! ${duration} seconds remaining`);
         setSuddenDeathTime(duration);
     };
 
@@ -158,7 +159,7 @@ const Game = () => {
     socket.on('perk_used', handlePerkUsed);
     socket.on('asteroid_hit', handleAsteroidHit);
     socket.on('perk_effect_rocket_fuel', handleRocketFuel);
-    socket.on('final_countdown', handleFinalCountdown);
+    socket.on('suddenDeath', handleSuddenDeath);
 
 
     return () => {
@@ -168,30 +169,31 @@ const Game = () => {
         socket.off('perk_used', handlePerkUsed);
         socket.off('asteroid_hit', handleAsteroidHit);
         socket.off('perk_effect_rocket_fuel', handleRocketFuel);
-        socket.off('final_countdown', handleFinalCountdown);
+        socket.off('suddenDeath', handleSuddenDeath);
     };
 
   }, [socket, roomId, myPlayerId, isGameOver]);
 
   useEffect(() => {
-    if (suddenDeathTime === null) return;
-
-    if (suddenDeathTime === 0) {
+    if (suddenDeathTime && suddenDeathTime > 0) {
+      const interval = setInterval(() => {
+        setSuddenDeathTime(prevTime => (prevTime > 0 ? prevTime - 1 : 0));
+      }, 1000);
+      return () => clearInterval(interval);
+    } else if (suddenDeathTime === 0) {
       setSuddenDeathTime(null);
-      return;
     }
-
-    const timer = setTimeout(() => {
-      setSuddenDeathTime(suddenDeathTime - 1);
-    }, 1000);
-
-    return () => clearTimeout(timer);
   }, [suddenDeathTime]);
 
 
   // This function is stable and won't cause re-renders
   const sendProgress = useCallback(() => {
     if (isGameOver || !gameState || !gameState.text || !socket || !myPlayerId) return;
+
+    // Freeze stats once the player has finished
+    if (gameState.players[myPlayerId] && gameState.players[myPlayerId].finished) {
+      return;
+    }
 
     const progress = ((inputValue.length / gameState.text.length) * 100);
     const elapsedSeconds = startTime ? (Date.now() - startTime) / 1000 : 0;
@@ -256,7 +258,6 @@ const Game = () => {
     if (typedValue.length > inputValue.length) {
         const nextChar = typedValue.slice(-1);
         if (gameState.text[inputValue.length] === nextChar) {
-            if (!startTime) setStartTime(Date.now());
             setInputValue(typedValue);
         }
     } else {
@@ -296,12 +297,16 @@ const Game = () => {
         {isHitByAsteroid && <AsteroidWarning />}
       </AnimatePresence>
       
-      {isGameOver && <ResultsModal players={gameState.players} myPlayerId={myPlayerId} playerResult={playerResult} />}
+      {(myPlayer?.finished || isGameOver) && <ResultsModal players={gameState.players} myPlayerId={myPlayerId} playerResult={playerResult} isGameOver={isGameOver} suddenDeathTime={suddenDeathTime} />}
       
       {suddenDeathTime && !isGameOver && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-red-600/90 backdrop-blur-sm border-2 border-red-400 rounded-lg p-6 text-white shadow-lg">
               <h3 className="text-3xl font-bold text-center mb-2">SUDDEN DEATH</h3>
-              <p className="text-xl text-center">Game ends in <span className="font-bold text-yellow-300">{suddenDeathTime}</span> seconds!</p>
+              {myPlayer && myPlayer.finished ? (
+                <p className="text-xl text-center font-bold text-yellow-300">Waiting for others...</p>
+              ) : (
+                <p className="text-xl text-center">Game ends in <span className="font-bold text-yellow-300">{suddenDeathTime}</span> seconds!</p>
+              )}
           </div>
       )}
       

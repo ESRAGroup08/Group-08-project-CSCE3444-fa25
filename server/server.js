@@ -400,13 +400,16 @@ io.on('connection', (socket) => {
         // If all players have finished, end the game immediately.
         if (finishedCount === totalPlayers) {
             console.log(`[Game] All players finished in room ${roomId}. Ending game.`);
+            if (room.suddenDeathTimer) {
+                clearTimeout(room.suddenDeathTimer);
+            }
             endGame(roomId);
         }
         // If this is the first player to finish in a multiplayer game, start the countdown.
         else if (finishedCount === 1 && totalPlayers > 1) {
-            console.log(`[Game] First player finished in room ${roomId}. Starting 10s countdown.`);
-            const countdownDuration = 10;
-            io.to(roomId).emit('final_countdown', { duration: countdownDuration });
+            console.log(`[Game] First player finished in room ${roomId}. Starting 15s countdown.`);
+            const countdownDuration = 15;
+            io.to(roomId).emit('suddenDeath', { duration: countdownDuration });
             
             // Start the server-side timer.
             room.suddenDeathTimer = setTimeout(() => {

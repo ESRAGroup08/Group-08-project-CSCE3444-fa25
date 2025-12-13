@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Crown, Trophy } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const ResultsModal = ({ players, myPlayerId, playerResult }) => {
+const ResultsModal = ({ players, myPlayerId, playerResult, isGameOver, suddenDeathTime }) => {
   const navigate = useNavigate();
 
   if (!players) return null;
@@ -40,29 +40,36 @@ const ResultsModal = ({ players, myPlayerId, playerResult }) => {
         transition={{ duration: 0.4, type: "spring", stiffness: 100 }}
       >
         <div className="text-center">
-          {isIWon ? (
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.3, duration: 0.5, type: "spring" }}
-            >
-              <div className="flex items-center justify-center gap-3 text-5xl font-bold mb-6">
-                <Trophy className="w-12 h-12 text-yellow-400 animate-bounce" />
-                <span className="text-yellow-400">YOU WON!</span>
-              </div>
-            </motion.div>
+          {isGameOver ? (
+            isIWon ? (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.3, duration: 0.5, type: "spring" }}
+              >
+                <div className="flex items-center justify-center gap-3 text-5xl font-bold mb-6">
+                  <Trophy className="w-12 h-12 text-yellow-400 animate-bounce" />
+                  <span className="text-yellow-400">YOU WON!</span>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.3, duration: 0.5, type: "spring" }}
+              >
+                <h2 className="text-4xl font-bold mb-3 text-red-400">YOU LOST!</h2>
+                <div className="flex items-center justify-center gap-3 text-2xl text-yellow-400 font-bold mb-6">
+                  <Crown className="w-8 h-8" />
+                  <span>{winner.username} wins!</span>
+                </div>
+              </motion.div>
+            )
           ) : (
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.3, duration: 0.5, type: "spring" }}
-            >
-              <h2 className="text-4xl font-bold mb-3 text-red-400">YOU LOST!</h2>
-              <div className="flex items-center justify-center gap-3 text-2xl text-yellow-400 font-bold mb-6">
-                <Crown className="w-8 h-8" />
-                <span>{winner.username} wins!</span>
-              </div>
-            </motion.div>
+            <div>
+              <h2 className="text-4xl font-bold mb-3 text-cyan-400">YOU FINISHED!</h2>
+              <p className="text-lg text-slate-400">Waiting for other players to finish...</p>
+            </div>
           )}
         </div>
 
@@ -108,6 +115,11 @@ const ResultsModal = ({ players, myPlayerId, playerResult }) => {
           })}
         </div>
 
+        {suddenDeathTime && !isGameOver && (
+          <div className="mt-6 text-center text-red-400 font-bold animate-pulse">
+            Game ends in {suddenDeathTime} seconds!
+          </div>
+        )}
         <div className="mt-8 flex justify-center">
           <button
             onClick={() => navigate('/menu')}

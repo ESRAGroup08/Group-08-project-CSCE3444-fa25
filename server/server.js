@@ -337,50 +337,86 @@ io.on('connection', (socket) => {
         }
     });
     
+    // A centralized function to end the game, calculate winners, and clean up.
+    function endGame(roomId) {
+        const room = gameRooms.get(roomId);
+        if (!room) return;
+
+        // If the timer is still running, clear it.
+        if (room.suddenDeathTimer) {
+            clearTimeout(room.suddenDeathTimer);
+            delete room.suddenDeathTimer;
+        }
+
+        const finishedPlayers = Object.values(room.players).filter(p => p.finished);
+        
+        if (finishedPlayers.length > 0) {
+            const winner = finishedPlayers.reduce((prev, current) => {
+                return ((current.wpm || 0) > (prev.wpm || 0)) ? current : prev;
+            });
+            
+            const loser = finishedPlayers.find(p => p.username !== winner.username);
+
+            // Rank updates for ranked games
+            if (room.isRanked && loser) {
+                const newRatings = ranking.updateRatings(winner.username, loser.username, 1);
+                winner.newRank = newRatings[winner.username];
+                loser.newRank = newRatings[loser.username];
+                console.log(`[Ranked] ${winner.username} wins. New rank: ${winner.newRank}. ${loser.username}'s new rank: ${loser.newRank}.`);
+            } else {
+                console.log(`[Game] ${winner.username} wins with ${winner.wpm} WPM!`);
+            }
+        }
+
+        io.to(roomId).emit('game_over', { players: room.players });
+        stopGameLoop(roomId);
+        setTimeout(() => gameRooms.delete(roomId), 10000);
+    }
+    
     // Handle player finishing
-    // --- MODIFIED: PLAYER FINISHED LOGIC (with Rank Updates) ---
-    // Replace your old 'player_finished' handler with this one.
     socket.on('player_finished', async ({ roomId, wpm, accuracy }) => {
         const room = gameRooms.get(roomId);
-        if (room && room.players[socket.id]) {
-            const playerState = room.players[socket.id];
-            if(playerState.finished) return; // Prevent finishing more than once
+        if (!room || !room.players[socket.id] || room.players[socket.id].finished) {
+            return; // Ignore if room/player doesn't exist or already finished
+        }
 
-            playerState.finished = true;
-            playerState.wpm = wpm;
-            playerState.accuracy = accuracy;
+        const playerState = room.players[socket.id];
+        playerState.finished = true;
+        playerState.wpm = wpm;
+        playerState.accuracy = accuracy;
+        
+        // Let other clients know this player has finished, so their UI can update.
+        io.to(roomId).emit('opponent_progress', { 
+            playerId: socket.id,
+            progress: 100,
+            wpm: Math.round(wpm),
+            finished: true
+        });
 
-            // Check if ALL players are finished
-            const allFinished = Object.values(room.players).every(p => p.finished);
+        const playerStates = Object.values(room.players);
+        const finishedCount = playerStates.filter(p => p.finished).length;
+        const totalPlayers = playerStates.length;
+
+        // If all players have finished, end the game immediately.
+        if (finishedCount === totalPlayers) {
+            console.log(`[Game] All players finished in room ${roomId}. Ending game.`);
+            endGame(roomId);
+        }
+        // If this is the first player to finish in a multiplayer game, start the countdown.
+        else if (finishedCount === 1 && totalPlayers > 1) {
+            console.log(`[Game] First player finished in room ${roomId}. Starting 10s countdown.`);
+            const countdownDuration = 10;
+            io.to(roomId).emit('final_countdown', { duration: countdownDuration });
             
-            if (allFinished) {
-                // Determine winner based on highest WPM among all finished players
-                const finishedPlayers = Object.values(room.players).filter(p => p.finished);
-                const winner = finishedPlayers.reduce((prev, current) => {
-                    return ((current.wpm || 0) > (prev.wpm || 0)) ? current : prev;
-                });
-                
-                const loser = finishedPlayers.find(p => p.username !== winner.username);
-
-                // Check if this is a ranked game and handle rank updates
-                if (room.isRanked && loser) {
-                    const newRatings = ranking.updateRatings(winner.username, loser.username, 1);
-                    winner.newRank = newRatings[winner.username];
-                    loser.newRank = newRatings[loser.username];
-                    console.log(`[Ranked] ${winner.username} wins (${winner.wpm} WPM). New rank: ${winner.newRank}. ${loser.username}'s new rank: ${loser.newRank}.`);
-                } else {
-                    console.log(`[Game] ${winner.username} wins with ${winner.wpm} WPM!`);
-                }
-
-                // Emit game over with final player states
-                io.to(roomId).emit('game_over', { players: room.players });
-                
-                stopGameLoop(roomId);
-                setTimeout(() => gameRooms.delete(roomId), 10000);
-            } else {
-                // Not all finished yet, just broadcast the update
-                io.to(roomId).emit('game_over', { players: room.players });
-            }
+            // Start the server-side timer.
+            room.suddenDeathTimer = setTimeout(() => {
+                console.log(`[Game] Sudden death timer for room ${roomId} ended.`);
+                endGame(roomId);
+            }, countdownDuration * 1000);
+        }
+        // If it's a solo game, end immediately
+        else if (totalPlayers === 1) {
+            endGame(roomId);
         }
     });
 

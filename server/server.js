@@ -3,14 +3,15 @@ const http = require('http');
 const { Server } = require("socket.io");
 const path = require('path');
 const cors = require('cors');
-// const mongoose = require('mongoose');
+const mongoose = require('mongoose');
+const MongoStore = require('connect-mongo'); // Added for session store
 const session = require('express-session');
-const passport = require('passport');
-// const GoogleStrategy = require('passport-google-oauth20').Strategy; // Bypassed
+const bcrypt = require('bcrypt');
 const { randomUUID } = require('crypto');
 const casualMatchmaking = require('./casualMatchmaking');
 const ranking = require('./ranking');
 const privateLobby = require('./privateLobby'); // Import the privateLobby module
+const { challenges, getDailyChallenges } = require('./challenges');
 
 
 
@@ -47,54 +48,456 @@ const io = new Server(server, {
 
 
 /* --- ALL DATABASE AND AUTHENTICATION CODE BYPASSED FOR DEVELOPMENT --- */
-/*
-// Database Connection
-mongoose.connect('mongodb://localhost:27017/typing_game')
+
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://game_user:testuser123@gltp0.tez957z.mongodb.net/?appName=GLTP0';
+mongoose.connect(MONGO_URI)
   .then(() => console.log('MongoDB connected successfully.'))
   .catch(err => console.error('MongoDB connection error:', err));
-
 // Mongoose Schemas
-const userSchema = new mongoose.Schema({ ... });
+
+const dailyChallengeSchema = new mongoose.Schema({
+  challengeId: { type: String, required: true },
+  completed: { type: Boolean, default: false },
+}, { _id: false });
+
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true, trim: true },
+  gamesPlayed: { type: Number, default: 0 },
+  averageWPM: { type: Number, default: 0 },
+  averageAccuracy: { type: Number, default: 0 },
+  eloRating: { type: Number, default: 1000 },
+  dailyStats: {
+    lastLoginDate: { type: String },
+    loginStreak: { type: Number, default: 0 },
+    consecutiveWins: { type: Number, default: 0 },
+    winsToday: { type: Number, default: 0 },
+    dailyChallenges: [dailyChallengeSchema],
+  },
+  friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  friendRequestsSent: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  friendRequestsReceived: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+}, { timestamps: true });
+
 const User = mongoose.model('User', userSchema);
-*/
+
 
 // --- Middleware ---
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 // Serve the static files from the React app
 app.use(express.static(path.join(__dirname, '../dist')));
-/*
-// Sessions and Passport Configuration - Bypassed
+
+// 3. Sessions Configuration (This is the block you asked for)
+app.set('trust proxy', 1); 
 app.use(session({
-  secret: 'a_secret_key_for_sessions_replace_this',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { secure: false }
+    secret: process.env.SESSION_SECRET || 'a_very_secure_default_secret_for_dev',
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({
+        mongoUrl: MONGO_URI, // Use the same MONGO_URI
+        collectionName: 'sessions',
+        ttl: 14 * 24 * 60 * 60 // 14 days
+    }),
+    cookie: {
+        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+        httpOnly: true,
+        sameSite: 'none', 
+        secure: true, 
+    }
 }));
-app.use(passport.initialize());
-app.use(passport.session());
 
-// Passport Google Strategy - Bypassed
-passport.use(new GoogleStrategy({ ... }, async (..., done) => { ... }));
-passport.serializeUser((user, done) => { ... });
-passport.deserializeUser(async (id, done) => { ... });
+// --- Helper Function to manage daily challenges ---
+// (This function MUST be defined BEFORE the API routes that use it)
+async function checkAndResetDailyChallenges(user) {
+  const today = new Date().toDateString();
+  // Check if the user's last login was not today
+  if (user.dailyStats.lastLoginDate !== today) {
+    
+    // Check if the last login was yesterday to continue the streak
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (user.dailyStats.lastLoginDate === yesterday.toDateString()) {
+      user.dailyStats.loginStreak += 1;
+    } else {
+      user.dailyStats.loginStreak = 1; // Reset streak if it wasn't yesterday
+    }
 
-// Auth & API Routes - Bypassed
-app.get('/auth/google', ...);
-app.get('/auth/google/callback', ...);
-app.get('/api/auth/status', ...);
-app.get('/auth/logout', ...);
-app.post('/api/login', ...);
-app.get('/api/users/:username', ...);
-app.put('/api/users/:username', ...);
+    // Reset daily stats and get new challenges
+    user.dailyStats.lastLoginDate = today;
+    user.dailyStats.dailyChallenges = getDailyChallenges(3); // Get 3 new challenges
+    user.dailyStats.consecutiveWins = 0; 
+    user.dailyStats.winsToday = 0;
+    
+    await user.save();
+    return true; // Challenges were reset
+  }
+  return false; // Challenges were not reset
+}
 
+app.post('/api/register', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({ message: 'Username and password are required.' });
+    }
+
+    try {
+        // Check if user already exists
+        const existingUser = await User.findOne({ username });
+        if (existingUser) {
+            return res.status(409).json({ message: 'Username already taken.' });
+        }
+
+        // Hash the password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // Create and save the new user
+        const newUser = new User({
+            username,
+            password: hashedPassword,
+        });
+        
+        await newUser.save();
+
+        // Optional: Log the user in immediately after registration
+        await checkAndResetDailyChallenges(newUser);
+        req.session.user = { id: newUser._id, username: newUser.username };
+
+        res.status(201).json({ message: 'User created successfully!', username: newUser.username });
+
+    } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({ message: 'Server error during registration.' });
+    }
+});
+
+// API Route for User Login
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({ message: 'Username and password are required.' });
+    }
+
+    try {
+        // Find the user by username
+        const user = await User.findOne({ username });
+        if (!user) {
+            return res.status(401).json({ message: 'Invalid credentials.' });
+        }
+
+        // Compare the provided password with the stored hash
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ message: 'Invalid credentials.' });
+        }
+        
+        // --- This is where we integrate the logic from presentation-demo ---
+        // Check and update daily stats on login
+        await checkAndResetDailyChallenges(user);
+        
+        // Store user info in the session to log them in
+        req.session.user = { id: user._id, username: user.username };
+        res.status(200).json({ message: 'Logged in successfully', username: user.username });
+
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ message: 'Server error during login.' });
+    }
+});
+
+// Check if a user is logged in
+app.get('/api/auth/status', (req, res) => {
+    if (req.session.user) {
+        res.status(200).json({ loggedIn: true, user: req.session.user });
+    } else {
+        res.status(200).json({ loggedIn: false });
+    }
+});
+
+app.get('/auth/logout', (req, res) => {
+    req.session.destroy(err => {
+        if (err) {
+            return res.status(500).json({ message: 'Could not log out, please try again.' });
+        }
+        res.clearCookie('connect.sid'); // The default session cookie name
+        res.status(200).json({ message: 'Logged out successfully' });
+    });
+});
+
+// Get User Profile Data
+app.get('/api/users/:username', async (req, res) => {
+    try {
+        const user = await User.findOne({ username: req.params.username }).select('-friends');
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+        res.status(200).json(user);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error fetching user data.' });
+    }
+});
+
+// Update Username
+app.put('/api/users/:username', async (req, res) => {
+    // Ensure user is logged in and is the one they are trying to update
+    if (!req.session.user || req.session.user.username !== req.params.username) {
+        return res.status(403).json({ message: 'Unauthorized' });
+    }
+    try {
+        const { newUsername } = req.body;
+        const user = await User.findOne({ username: req.params.username });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        user.username = newUsername;
+        await user.save();
+
+        // Update session with new username
+        req.session.user.username = newUsername;
+
+        res.status(200).json(user);
+    } catch (error) {
+        res.status(500).json({ message: 'Error updating username.' });
+    }
+});
+
+
+// 5. Friend Management API Routes
 const friendRouter = express.Router();
-friendRouter.use(...);
-friendRouter.get('/', ...);
-// ... all other friend routes
+
+// Middleware to ensure user is authenticated for all friend routes
+friendRouter.use((req, res, next) => {
+    if (!req.session.user) {
+        return res.status(401).json({ message: 'Not authenticated' });
+    }
+    req.userId = req.session.user.id; // Add userId to the request object for easier access
+    next();
+});
+
+// GET /api/friends - Fetch all friends and requests for the logged-in user
+friendRouter.get('/', async (req, res) => {
+    try {
+        const user = await User.findById(req.userId)
+            .populate('friends', 'username') // Only get username for friends
+            .populate('friendRequestsSent', 'username')
+            .populate('friendRequestsReceived', 'username');
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        res.status(200).json({
+            friends: user.friends,
+            sentRequests: user.friendRequestsSent,
+            receivedRequests: user.friendRequestsReceived
+        });
+    } catch (error) {
+        console.error('Error fetching friend data:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// GET /api/friends/search - Search for users
+friendRouter.get('/search', async (req, res) => {
+    const { query } = req.query;
+    if (!query) {
+        return res.status(400).json({ message: 'Search query is required' });
+    }
+
+    try {
+        const currentUser = await User.findById(req.userId);
+        const allFriendsAndRequests = [
+            ...currentUser.friends,
+            ...currentUser.friendRequestsSent,
+            ...currentUser.friendRequestsReceived,
+            currentUser._id // also exclude self
+        ];
+
+        // Find users whose username matches the query, are not the user themselves,
+        // and are not already friends or have a pending request.
+        const users = await User.find({
+            username: { $regex: query, $options: 'i' }, // Case-insensitive search
+            _id: { $nin: allFriendsAndRequests } // Exclude users in the array
+        }).select('username'); // Only send back the username and _id
+
+        res.status(200).json(users);
+    } catch (error) {
+        console.error('Error searching users:', error);
+        res.status(500).json({ message: 'Server error during search' });
+    }
+});
+
+// POST /api/friends/request/:userId - Send a friend request
+friendRouter.post('/request/:userId', async (req, res) => {
+    const recipientId = req.params.userId;
+    const requesterId = req.userId;
+
+    if (recipientId === requesterId) {
+        return res.status(400).json({ message: 'You cannot send a friend request to yourself.' });
+    }
+
+    try {
+        const requester = await User.findById(requesterId);
+        const recipient = await User.findById(recipientId);
+
+        if (!recipient) {
+            return res.status(404).json({ message: 'Recipient not found.' });
+        }
+        
+        // Check if already friends or if a request was already sent
+        if (requester.friends.includes(recipientId)) {
+            return res.status(400).json({ message: 'You are already friends.' });
+        }
+        if (requester.friendRequestsSent.includes(recipientId)) {
+            return res.status(400).json({ message: 'Friend request already sent.' });
+        }
+        if (requester.friendRequestsReceived.includes(recipientId)) {
+            return res.status(400).json({ message: 'This user has already sent you a friend request. Please accept or reject it.'})
+        }
+
+        // Add request to both users
+        recipient.friendRequestsReceived.push(requesterId);
+        requester.friendRequestsSent.push(recipientId);
+
+        await recipient.save();
+        await requester.save();
+
+        res.status(200).json({ message: 'Friend request sent.' });
+    } catch (error) {
+        console.error('Error sending friend request:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// POST /api/friends/accept/:userId - Accept a friend request
+friendRouter.post('/accept/:userId', async (req, res) => {
+    const requesterId = req.params.userId;
+    const recipientId = req.userId; // The logged-in user is the one accepting
+
+    try {
+        const requester = await User.findById(requesterId);
+        const recipient = await User.findById(recipientId);
+
+        // Check if a request actually exists
+        if (!recipient.friendRequestsReceived.includes(requesterId)) {
+            return res.status(400).json({ message: 'No friend request from this user.' });
+        }
+
+        // --- Perform the transaction ---
+        // 1. Remove the request from both sides
+        recipient.friendRequestsReceived.pull(requesterId);
+        requester.friendRequestsSent.pull(recipientId);
+
+        // 2. Add each other to their friends lists
+        recipient.friends.push(requesterId);
+        requester.friends.push(recipientId);
+
+        await requester.save();
+        await recipient.save();
+
+        res.status(200).json({ message: 'Friend request accepted.' });
+    } catch (error) {
+        console.error('Error accepting friend request:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// POST /api/friends/reject/:userId - Reject, Cancel, or Unfriend
+// This one endpoint handles multiple cases based on the relationship status
+friendRouter.post('/reject/:userId', async (req, res) => {
+    const otherUserId = req.params.userId;
+    const currentUserId = req.userId;
+
+    try {
+        const currentUser = await User.findById(currentUserId);
+        const otherUser = await User.findById(otherUserId);
+
+        if (!otherUser) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        // Case 1: Rejecting a received request
+        if (currentUser.friendRequestsReceived.includes(otherUserId)) {
+            currentUser.friendRequestsReceived.pull(otherUserId);
+            otherUser.friendRequestsSent.pull(currentUserId);
+            await currentUser.save();
+            await otherUser.save();
+            return res.status(200).json({ message: 'Friend request rejected.' });
+        }
+        // Case 2: Canceling a sent request
+        else if (currentUser.friendRequestsSent.includes(otherUserId)) {
+            currentUser.friendRequestsSent.pull(otherUserId);
+            otherUser.friendRequestsReceived.pull(currentUserId);
+            await currentUser.save();
+            await otherUser.save();
+            return res.status(200).json({ message: 'Friend request canceled.' });
+        }
+        // Case 3: Unfriending a current friend
+        else if (currentUser.friends.includes(otherUserId)) {
+            currentUser.friends.pull(otherUserId);
+            otherUser.friends.pull(currentUserId);
+            await currentUser.save();
+            await otherUser.save();
+            return res.status(200).json({ message: 'User unfriended.' });
+        }
+        // Case 4: No relationship found
+        else {
+            return res.status(400).json({ message: 'No relationship to remove.' });
+        }
+
+    } catch (error) {
+        console.error('Error in reject/cancel/unfriend action:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+
+// Mount the router on the main app
 app.use('/api/friends', friendRouter);
-*/
-/* --- END OF BYPASSED CODE --- */
+
+// --- NEW: API Endpoint for Daily Challenges ---
+app.get('/api/challenges', async (req, res) => {
+  if (!req.session.user) {
+    return res.status(401).json({ message: 'Not authenticated' });
+  }
+  try {
+    const user = await User.findById(req.session.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    // Ensure challenges are up-to-date for the day
+    await checkAndResetDailyChallenges(user);
+
+    // Populate challenges with full data from the `challenges` map
+    const populatedChallenges = user.dailyStats.dailyChallenges.map(c => {
+      const challengeData = challenges.get(c.challengeId);
+      return { ...challengeData, ...c.toObject() };
+    });
+
+    res.status(200).json({
+      loginStreak: user.dailyStats.loginStreak,
+      totalRewards: user.rankingPoints,
+      challenges: populatedChallenges,
+    });
+  } catch (error) {
+    console.error('Error fetching challenges:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/leaderboard', async (req, res) => {
+    try {
+        const topPlayers = await User.find({})
+            .sort({ eloRating: -1 }) // Sort by eloRating
+            .limit(25)
+            .select('username eloRating averageWPM'); // Select the new field
+
+        res.status(200).json(topPlayers);
+    } catch (error) {
+        console.error('Error fetching leaderboard data:', error);
+        res.status(500).json({ message: 'Server error fetching leaderboard.' });
+    }
+});
 
 const PORT = process.env.PORT || 3000;
 console.log("NOTE: MongoDB connection and all DB-related APIs are bypassed for development.");

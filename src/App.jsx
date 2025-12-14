@@ -1,16 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import io from 'socket.io-client';
+import { applyTheme } from './utils.js';
 
 // --- THIS IS THE FIX ---
 // Determine the server URL based on the environment
 const getServerURL = () => {
-  if (process.env.NODE_ENV === 'production') {
-    return 'https://group-08-project-csce3444-fa25.onrender.com';
+  // Check the browser's current URL
+  const hostname = window.location.hostname;
+
+  // If we are on localhost (dev or docker), connect to local server
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:3000';
   }
-  // In development, always use localhost:3000 (the Express server)
-  // regardless of what port Vite is running on
-  return 'http://localhost:3000';
+
+  // Otherwise, we are on the live internet (Render)
+  return 'https://group-08-project-csce3444-fa25.onrender.com';
 };
 
 const SERVER_URL = getServerURL();
@@ -24,20 +29,42 @@ const socket = io(SERVER_URL, {
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
   reconnectionAttempts: 5,
-  transports: ['websocket', 'polling']
+  transports: ['websocket', 'polling'],
+  withCredentials: true
 });
 
 function App() {
   const [isConnected, setIsConnected] = useState(socket.connected);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
-    // For development: generate a random username if one doesn't exist
-    if (!localStorage.getItem('username')) {
-      const randomId = Math.floor(Math.random() * 1000);
-      const guestName = `TestPlayer_${randomId}`;
-      localStorage.setItem('username', guestName);
-      console.log(`Bypassing login. Setting username to: ${guestName}`);
+    // Apply saved theme on app startup so theme persists globally
+    try {
+      const saved = localStorage.getItem('gameSettings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.theme) applyTheme(parsed.theme);
+      }
+    } catch (e) {
+      // ignore parse errors
     }
+
+    const checkAuthStatus = async () => {
+      try {
+        const response = await fetch(`${SERVER_URL}/api/auth/status`);
+        const data = await response.json();
+        if (data.isAuthenticated) {
+          setUser(data.user);
+          console.log('User is authenticated:', data.user);
+        } else {
+          console.log('User is not authenticated.');
+        }
+      } catch (error) {
+        console.error('Error checking auth status:', error);
+      }
+    };
+
+    checkAuthStatus();
 
     const onConnect = () => {
       console.log('✅ Connected to WebSocket server!');
@@ -58,7 +85,6 @@ function App() {
     socket.on('disconnect', onDisconnect);
     socket.on('connect_error', onConnectError);
 
-    // Clean up the connection on component unmount
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
@@ -68,8 +94,7 @@ function App() {
 
   return (
     <div className="App">
-      {/* Pass the socket instance to all child routes */}
-      <Outlet context={{ socket, isConnected }} />
+      <Outlet context={{ socket, isConnected, user, setUser }} />
     </div>
   );
 }

@@ -27,7 +27,7 @@ const router = createHashRouter([
       { path: '/lobby/custom', element: <CustomLobby /> },
       { path: '/leaderboard', element: <LeaderboardPage /> },
       { path: '/game/:roomId', element: <Game /> }, // New route
-      { path: '/profile', element: <Profile /> }, // Add the new profile route
+      { path: '/profile/:username', element: <Profile /> }, // MODIFIED: Expect a username
       { path: '/friends', element: <Friends /> }, // Add the new friends route
       { path: '/settings', element: <Settings /> }, // Add the new settings route
       { path: '/daily-challenges', element: <DailyChallenges /> }, // Add the new daily challenges route

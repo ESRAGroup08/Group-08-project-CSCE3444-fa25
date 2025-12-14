@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+// MODIFIED: import useNavigate
+import { Link, useParams, useNavigate } from 'react-router-dom';
 
 const Profile = () => {
   const [userData, setUserData] = useState(null);
@@ -7,46 +8,63 @@ const Profile = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const { username } = useParams();
+  const navigate = useNavigate(); // MODIFIED: Initialize the navigate function
 
   useEffect(() => {
     const fetchUserData = async () => {
-      const storedUsername = localStorage.getItem('username');
-      if (!storedUsername) {
-        setError('No user is logged in.');
+      if (!username) {
+        setError('No user profile specified.');
         setIsLoading(false);
         return;
       }
 
-      // Bypass API - use mock data
-      const mockData = {
-        username: storedUsername,
-        gamesPlayed: 0,
-        averageWPM: 0,
-        averageAccuracy: 0,
-      };
-      setUserData(mockData);
-      setNewUsername(mockData.username);
-      setIsLoading(false);
+      try {
+        const response = await fetch(`/api/users/${username}`, {
+          headers: {
+            'x-username': localStorage.getItem('username')
+          }
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to fetch user data.');
+        }
+
+        const data = await response.json();
+        setUserData(data);
+        setNewUsername(data.username);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     fetchUserData();
-  }, []);
+  }, [username]);
 
   const handleUsernameChange = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
 
-    const storedUsername = localStorage.getItem('username');
-    if (newUsername === storedUsername) {
+    const currentUsername = username;
+    if (newUsername.trim() === '') {
+        return setError('Username cannot be empty.');
+    }
+    if (newUsername.trim() === currentUsername) {
       return setError('The new username must be different from the current one.');
     }
 
     try {
-      const response = await fetch(`/api/users/${storedUsername}`, {
+      const response = await fetch(`/api/users/${currentUsername}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newUsername }),
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-username': localStorage.getItem('username')
+        },
+        body: JSON.stringify({ newUsername: newUsername.trim() }),
       });
 
       const data = await response.json();
@@ -55,10 +73,12 @@ const Profile = () => {
         throw new Error(data.message || 'Failed to update username.');
       }
       
-      setSuccess('Username updated successfully!');
-      setUserData(data);
-      // Update username in localStorage to reflect the change
+      // Update username in localStorage first
       localStorage.setItem('username', data.username);
+      
+      // MODIFIED: Use navigate for a clean redirect
+      // This will navigate to the new profile page and trigger the useEffect to refetch data
+      navigate(`/profile/${data.username}`);
 
     } catch (err) {
       setError(err.message);
@@ -89,11 +109,11 @@ const Profile = () => {
             <p className="text-gray-400">Games Played</p>
           </div>
           <div className="bg-gray-700 p-4 rounded-lg">
-            <p className="text-xl font-semibold">{userData?.averageWPM?.toFixed(2) ?? 0}</p>
+            <p className="text-xl font-semibold">{userData?.averageWPM?.toFixed(1) ?? 0}</p>
             <p className="text-gray-400">Average WPM</p>
           </div>
           <div className="bg-gray-700 p-4 rounded-lg">
-            <p className="text-xl font-semibold">{userData?.averageAccuracy?.toFixed(2) ?? 0}%</p>
+            <p className="text-xl font-semibold">{userData?.averageAccuracy?.toFixed(1) ?? 0}%</p>
             <p className="text-gray-400">Average Accuracy</p>
           </div>
         </div>
@@ -123,7 +143,7 @@ const Profile = () => {
         </div>
         
         <div className="mt-8 text-center">
-          <Link to="/main-menu" className="text-blue-400 hover:underline">Back to Main Menu</Link>
+          <Link to="/menu" className="text-blue-400 hover:underline">Back to Main Menu</Link>
         </div>
       </div>
     </div>

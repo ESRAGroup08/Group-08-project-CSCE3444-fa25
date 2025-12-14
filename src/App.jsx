@@ -1,69 +1,42 @@
 import React, { useEffect, useState } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'; // Import useNavigate
 import io from 'socket.io-client';
 
-// --- THIS IS THE FIX ---
-// Determine the server URL based on the environment
 const getServerURL = () => {
   if (process.env.NODE_ENV === 'production') {
     return 'https://group-08-project-csce3444-fa25.onrender.com';
   }
-  // In development, always use localhost:3000 (the Express server)
-  // regardless of what port Vite is running on
   return 'http://localhost:3000';
 };
 
 const SERVER_URL = getServerURL();
 
-console.log("--- App.jsx is loading ---");
-console.log(`Attempting to connect to WebSocket server at: ${SERVER_URL}`);
-
-// Initialize the socket connection with explicit URL and options
 const socket = io(SERVER_URL, {
   reconnection: true,
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
   reconnectionAttempts: 5,
-  transports: ['websocket', 'polling'],
-  withCredentials: true
+  transports: ['websocket', 'polling']
 });
 
 function App() {
   const [isConnected, setIsConnected] = useState(socket.connected);
-  const [user, setUser] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const checkAuthStatus = async () => {
-      try {
-        const response = await fetch(`${SERVER_URL}/api/auth/status`);
-        const data = await response.json();
-        if (data.isAuthenticated) {
-          setUser(data.user);
-          console.log('User is authenticated:', data.user);
-        } else {
-          console.log('User is not authenticated.');
+    // On mount, check if a user is "logged in" (i.e., has a username in localStorage).
+    // If not, redirect them to the login page.
+    const storedUsername = localStorage.getItem('username');
+    if (!storedUsername) {
+        // If we are not already at the root path, redirect to login.
+        if (window.location.hash !== '#/') {
+             navigate('/');
         }
-      } catch (error) {
-        console.error('Error checking auth status:', error);
-      }
-    };
-
-    checkAuthStatus();
-
-    const onConnect = () => {
-      console.log('✅ Connected to WebSocket server!');
-      setIsConnected(true);
-    };
-
-    const onDisconnect = () => {
-      console.log('🔌 Disconnected from WebSocket server.');
-      setIsConnected(false);
-    };
-
-    const onConnectError = (err) => {
-        console.error('❌ FAILED to connect to WebSocket server:', err.message);
-        console.error('Full error object:', err);
     }
+
+    const onConnect = () => setIsConnected(true);
+    const onDisconnect = () => setIsConnected(false);
+    const onConnectError = (err) => console.error('WebSocket Connection Error:', err.message);
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
@@ -74,11 +47,11 @@ function App() {
       socket.off('disconnect', onDisconnect);
       socket.off('connect_error', onConnectError);
     };
-  }, []);
+  }, [navigate]); // Add navigate to dependency array
 
   return (
     <div className="App">
-      <Outlet context={{ socket, isConnected, user, setUser }} />
+      <Outlet context={{ socket, isConnected }} />
     </div>
   );
 }

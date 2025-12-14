@@ -1,15 +1,12 @@
 import React from 'react';
 import './MainMenu.css';
-import { useNavigate, Link, useOutletContext } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import Header from './Header.jsx';
 
 const MainMenu = () => {
   const navigate = useNavigate();
-  const { user, setUser, socket } = useOutletContext();
-
-  const SERVER_URL = process.env.NODE_ENV === 'production'
-    ? 'https://group-08-project-csce3444-fa25.onrender.com'
-    : 'http://localhost:3000';
+  // Get the username from localStorage to build the correct link
+  const username = localStorage.getItem('username');
 
   const handleMultiplayer = () => {
     navigate('/lobby');
@@ -19,10 +16,8 @@ const MainMenu = () => {
     navigate('/leaderboard');
   };
 
-  const handleLogout = async () => {
-    await fetch(`${SERVER_URL}/auth/logout`);
-    setUser(null);
-    socket.disconnect();
+  const handleQuit = () => {
+    localStorage.removeItem('username');
     navigate('/');
   };
 
@@ -30,7 +25,6 @@ const MainMenu = () => {
     <>
       <Header />
       <div className="main-menu-container">
-        {user && <p className="text-white text-center mb-4">Welcome, {user.username}!</p>}
         <nav className="main-navigation" aria-label="Main game menu">
           <ul>
             <li>
@@ -44,7 +38,8 @@ const MainMenu = () => {
               </button>
             </li>
             <li>
-              <Link to={`/profile/${user?.username}`} className="menu-button">
+              {/* MODIFIED: The link now includes the username */}
+              <Link to={`/profile/${username}`} className="menu-button">
                 PROFILE
               </Link>
             </li>
@@ -64,7 +59,7 @@ const MainMenu = () => {
               </Link>
             </li>
             <li>
-              <button className="menu-button secondary" onClick={handleLogout}>
+              <button className="menu-button secondary" onClick={handleQuit}>
                 LOGOUT
               </button>
             </li>
@@ -76,4 +71,3 @@ const MainMenu = () => {
 };
 
 export default MainMenu;
-

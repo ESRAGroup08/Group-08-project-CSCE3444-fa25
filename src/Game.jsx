@@ -36,6 +36,7 @@ const Game = () => {
   // New state for perks
   const [heldPerk, setHeldPerk] = useState(null);
   const [isHitByAsteroid, setIsHitByAsteroid] = useState(false);
+  const [isBlinded, setIsBlinded] = useState(false);
   const [myPlayerId, setMyPlayerId] = useState(null);
   const [playerResult, setPlayerResult] = useState(null); // 'won' or 'lost'
   const [suddenDeathTime, setSuddenDeathTime] = useState(null);
@@ -147,10 +148,29 @@ const Game = () => {
         setInputValue(prev => prev + autoCompletedText);
     };
 
+    const handleRepulsorHit = ({ wordsToRemove }) => {
+        setInputValue(prev => {
+            const words = prev.split(' ');
+            if (words.length <= wordsToRemove) {
+                return '';
+            }
+            return words.slice(0, words.length - wordsToRemove).join(' ');
+        });
+    };
+
+    const handleNebulaHit = () => {
+        setIsBlinded(true);
+        setTimeout(() => setIsBlinded(false), 3000);
+    };
+
     const handleSuddenDeath = ({ duration }) => {
         if (isGameOver) return;
         console.log(`Sudden Death! ${duration} seconds remaining`);
         setSuddenDeathTime(duration);
+    };
+
+    const handleMatchFound = ({ roomId, players, text }) => {
+        setGameState({ roomId, players, text: text.replace(/[‘’]/g, "'").replace(/[“”]/g, '"') });
     };
 
     socket.on('opponent_progress', handleOpponentProgress);
@@ -159,7 +179,10 @@ const Game = () => {
     socket.on('perk_used', handlePerkUsed);
     socket.on('asteroid_hit', handleAsteroidHit);
     socket.on('perk_effect_rocket_fuel', handleRocketFuel);
+    socket.on('repulsor_hit', handleRepulsorHit);
+    socket.on('nebula_hit', handleNebulaHit);
     socket.on('suddenDeath', handleSuddenDeath);
+    socket.on('match_found', handleMatchFound);
 
 
     return () => {
@@ -169,7 +192,10 @@ const Game = () => {
         socket.off('perk_used', handlePerkUsed);
         socket.off('asteroid_hit', handleAsteroidHit);
         socket.off('perk_effect_rocket_fuel', handleRocketFuel);
+        socket.off('repulsor_hit', handleRepulsorHit);
+        socket.off('nebula_hit', handleNebulaHit);
         socket.off('suddenDeath', handleSuddenDeath);
+        socket.off('match_found', handleMatchFound);
     };
 
   }, [socket, roomId, myPlayerId, isGameOver]);
@@ -320,6 +346,7 @@ const Game = () => {
           heldPerk={heldPerk}
           onUsePerk={handleUsePerk}
           disabled={isMatchmaking} // Disable input during matchmaking
+          isBlinded={isBlinded}
         />
       </main>
     </div>

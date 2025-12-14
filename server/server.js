@@ -108,10 +108,10 @@ const TEXT_SNIPPETS = [
     "Deep within the Amazon rainforest, a poison dart frog, no bigger than a thumbnail, displayed its vibrant, azure skin. This brilliant coloration serves as a stark warning to predators; its glands secrete a potent neurotoxin capable of paralyzing a fully grown jaguar in a matter of minutes.",
     "During the height of the Roman Empire, aqueducts were masterpieces of civil engineering, transporting fresh water over vast distances. These structures, built with remarkable precision using arches and gravity, allowed cities like Rome to flourish, supporting public baths, fountains, and sanitation systems for over a million inhabitants.",
     "The colony ship 'Odyssey' prepared for its final deceleration burn, aiming for a stable orbit around Kepler-186f. Generations had lived and died within its self-sustaining biosphere during the centuries-long journey. Now, the descendants of the original crew would finally witness the crimson light of their new sun.",
-    "A persistent denial-of-service attack targeted the company’s primary authentication server, causing widespread login failures. The security team worked tirelessly, implementing dynamic IP blacklisting and traffic shaping rules. They analyzed network packets, searching for the signature of the botnet responsible for the overwhelming flood of malicious requests.",
+    "A persistent denial-of-service attack targeted the company's primary authentication server, causing widespread login failures. The security team worked tirelessly, implementing dynamic IP blacklisting and traffic shaping rules. They analyzed network packets, searching for the signature of the botnet responsible for the overwhelming flood of malicious requests.",
     "The Arctic tern has the longest migratory path of any animal on Earth, flying from its breeding grounds in the Arctic to the Antarctic and back again each year. This incredible journey, covering nearly 50,000 miles, ensures the bird lives in a perpetual summer, enjoying endless daylight and abundant food.",
     "The Library of Alexandria, in ancient Egypt, was not just a repository of scrolls but a vibrant center of learning and scholarship. Scholars from across the known world gathered there to study mathematics, astronomy, and philosophy; its destruction represented an incalculable loss of knowledge for all subsequent human civilizations.",
-    "As the landing craft descended through the thick, methane-rich atmosphere of Titan, the pilot navigated through turbulent winds and low visibility. The view outside was a hazy, orange landscape, illuminated by the distant glow of Saturn. Their mission: to drill through the moon’s icy crust and explore its subsurface ocean.",
+    "As the landing craft descended through the thick, methane-rich atmosphere of Titan, the pilot navigated through turbulent winds and low visibility. The view outside was a hazy, orange landscape, illuminated by the distant glow of Saturn. Their mission: to drill through the moon's icy crust and explore its subsurface ocean.",
     "The machine learning model was trained on a massive dataset of high-resolution images to identify subtle anomalies in medical scans. By leveraging a deep convolutional neural network, it could detect patterns invisible to the human eye, offering a powerful new tool for early diagnosis and improving patient outcomes significantly."
 ];
 
@@ -120,7 +120,7 @@ function selectRandomText() {
 }
 
 const gameRooms = new Map();
-const PERKS = ['ASTEROID_ATTACK', 'ROCKET_FUEL'];
+const PERKS = ['ASTEROID_ATTACK', 'ROCKET_FUEL', 'REPULSOR', 'NEBULA'];
 const rankedQueue = []; // Placeholder for ranked matchmaking queue
 // A simple in-memory store for game states
 
@@ -341,11 +341,16 @@ io.on('connection', (socket) => {
             const text = room.text;
             
             const currentLength = Math.floor(text.length * (currentProgress / 100));
-            const boostLength = Math.floor(text.length * 0.25);
+            const boostLength = Math.floor(text.length * 0.05);
             
             const autoCompletedText = text.substring(currentLength, currentLength + boostLength);
 
             socket.emit('perk_effect_rocket_fuel', { autoCompletedText });
+        } else if (perk === 'REPULSOR') {
+            // Repulsor now removes 2 words from the opponent's progress
+            socket.to(roomId).emit('repulsor_hit', { wordsToRemove: 2 });
+        } else if (perk === 'NEBULA') {
+            socket.to(roomId).emit('nebula_hit');
         }
     });
     

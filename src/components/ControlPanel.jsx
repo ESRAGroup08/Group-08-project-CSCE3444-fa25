@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { Zap, Rocket, Gauge, AlertTriangle, ShieldOff, Wind, CloudFog } from 'lucide-react';
+import { Zap, Rocket, Gauge, AlertTriangle, ShieldOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export function ControlPanel({ 
@@ -10,7 +10,6 @@ export function ControlPanel({
   heldPerk, 
   onUsePerk,
   disabled, // New prop for disabling input
-  isBlinded,
 }) {
   const inputRef = useRef(null);
 
@@ -29,7 +28,7 @@ export function ControlPanel({
   const perksConfig = {
     'ROCKET_FUEL': {
       name: 'ROCKET FUEL',
-      description: 'Completes 5% of the sentence',
+      description: 'Completes 25% of the sentence',
       Icon: Rocket,
       color: 'orange',
     },
@@ -38,18 +37,6 @@ export function ControlPanel({
       description: 'Disrupts your opponent',
       Icon: AlertTriangle,
       color: 'red',
-    },
-    'REPULSOR': {
-      name: 'REPULSOR',
-      description: 'Push opponent back 2 words',
-      Icon: Wind,
-      color: 'indigo',
-    },
-    'NEBULA': {
-      name: 'NEBULA',
-      description: 'Blind opponent for 3s',
-      Icon: CloudFog,
-      color: 'fuchsia',
     },
   };
 
@@ -142,11 +129,6 @@ export function ControlPanel({
                   } else if (index === inputValue.length) {
                     className = 'text-white bg-green-500/30 px-0.5 rounded animate-pulse';
                   }
-                  
-                  if (isBlinded && index >= inputValue.length) {
-                    className += ' nebula-blind';
-                  }
-
                   return (
                     <span key={index} className={className}>
                       {char}

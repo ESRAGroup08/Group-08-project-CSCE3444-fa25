@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-// MODIFIED: import useNavigate
 import { Link, useParams, useNavigate } from 'react-router-dom';
 
 const Profile = () => {
@@ -9,7 +8,7 @@ const Profile = () => {
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const { username } = useParams();
-  const navigate = useNavigate(); // MODIFIED: Initialize the navigate function
+  const navigate = useNavigate(); // Hook for navigation
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -73,12 +72,11 @@ const Profile = () => {
         throw new Error(data.message || 'Failed to update username.');
       }
       
-      // Update username in localStorage first
+      setSuccess('Username updated successfully!');
       localStorage.setItem('username', data.username);
       
-      // MODIFIED: Use navigate for a clean redirect
-      // This will navigate to the new profile page and trigger the useEffect to refetch data
-      navigate(`/profile/${data.username}`);
+      // Redirect to the new profile page using useNavigate
+      navigate(`/profile/${data.username}`, { replace: true });
 
     } catch (err) {
       setError(err.message);

@@ -62,6 +62,113 @@ app.get('/api/auth/status', async (req, res) => {
     }
 });
 
+app.get('/api/users/search', async (req, res) => {
+    const { query } = req.query;
+    const currentUsername = req.headers['x-username'];
+    if (!query) return res.status(400).json({ message: 'Search query is required.' });
+    try {
+        const currentUser = await User.findOne({ username: currentUsername });
+        if (!currentUser) return res.status(404).json({ message: 'Authenticated user not found.' });
+
+        const users = await User.find({
+            username: { $regex: query, $options: 'i' },
+            _id: { $ne: currentUser._id }
+        }).limit(20);
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error while searching for users.' });
+    }
+});
+
+app.get('/api/friends', async (req, res) => {
+    const username = req.headers['x-username'];
+    if (!username) return res.status(401).json({ message: 'Unauthorized' });
+
+    try {
+        const user = await User.findOne({ username })
+            .populate('friends', 'username')
+            .populate('friendRequestsSent', 'username')
+            .populate('friendRequestsReceived', 'username');
+
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        res.json({
+            friends: user.friends,
+            sentRequests: user.friendRequestsSent,
+            receivedRequests: user.friendRequestsReceived,
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error while fetching friends data.' });
+    }
+});
+
+app.post('/api/friend-request', async (req, res) => {
+    const { recipientId } = req.body;
+    const senderUsername = req.headers['x-username'];
+
+    try {
+        const sender = await User.findOne({ username: senderUsername });
+        const recipient = await User.findById(recipientId);
+
+        if (!recipient || !sender) return res.status(404).json({ message: 'User not found.' });
+
+        if (sender.friends.includes(recipient._id) || sender.friendRequestsSent.includes(recipient._id)) {
+            return res.status(400).json({ message: 'Friend request already sent or already friends.' });
+        }
+        
+        await User.updateOne({ _id: sender._id }, { $addToSet: { friendRequestsSent: recipient._id } });
+        await User.updateOne({ _id: recipient._id }, { $addToSet: { friendRequestsReceived: sender._id } });
+
+        res.status(200).json({ message: 'Friend request sent successfully.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error while sending friend request.' });
+    }
+});
+
+app.post('/api/friend-request/respond', async (req, res) => {
+    const { requesterId, action } = req.body;
+    const recipientUsername = req.headers['x-username'];
+
+    try {
+        const recipient = await User.findOne({ username: recipientUsername });
+        const requester = await User.findById(requesterId);
+
+        if (!recipient || !requester) return res.status(404).json({ message: 'User not found' });
+
+        await User.updateOne({ _id: recipient._id }, { $pull: { friendRequestsReceived: requester._id } });
+        await User.updateOne({ _id: requester._id }, { $pull: { friendRequestsSent: recipient._id } });
+
+        if (action === 'accept') {
+            await User.updateOne({ _id: recipient._id }, { $addToSet: { friends: requester._id } });
+            await User.updateOne({ _id: requester._id }, { $addToSet: { friends: recipient._id } });
+        }
+        
+        res.status(200).json({ message: `Friend request ${action}ed.` });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error while responding to friend request.' });
+    }
+});
+
+app.post('/api/friend/remove', async (req, res) => {
+    const { friendId } = req.body;
+    const currentUsername = req.headers['x-username'];
+
+    try {
+        const currentUser = await User.findOne({ username: currentUsername });
+        const friend = await User.findById(friendId);
+
+        if (!currentUser || !friend) return res.status(404).json({ message: 'User not found.' });
+        
+        await User.updateOne({ _id: currentUser._id }, { $pull: { friends: friend._id } });
+        await User.updateOne({ _id: friend._id }, { $pull: { friends: currentUser._id } });
+
+        res.status(200).json({ message: 'Friend removed successfully.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error while removing friend.' });
+    }
+});
+
+
 app.get('/api/users/:username', async (req, res) => {
     try {
         if (req.params.username !== req.headers['x-username']) return res.status(403).json({ message: 'Forbidden' });

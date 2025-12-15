@@ -12,60 +12,27 @@ const Friends = () => {
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Get current user from localStorage
   const getCurrentUsername = () => localStorage.getItem('username') || '';
 
-  // Initialize with mock data from localStorage
-  const initializeMockFriends = useCallback(() => {
-    const username = getCurrentUsername();
-    const mockFriendsKey = `friends_${username}`;
-    const storedFriends = localStorage.getItem(mockFriendsKey);
-    
-    if (storedFriends) {
-      const data = JSON.parse(storedFriends);
-      setFriends(data.friends || []);
-      setSentRequests(data.sentRequests || []);
-      setReceivedRequests(data.receivedRequests || []);
-    } else {
-      setFriends([]);
-      setSentRequests([]);
-      setReceivedRequests([]);
-    }
-    setIsLoading(false);
-  }, []);
-
-  const saveFriendsToStorage = useCallback((friendsData, sentData, receivedData) => {
-    const username = getCurrentUsername();
-    const mockFriendsKey = `friends_${username}`;
-    localStorage.setItem(mockFriendsKey, JSON.stringify({
-      friends: friendsData,
-      sentRequests: sentData,
-      receivedRequests: receivedData
-    }));
-  }, []);
-
   const fetchFriendData = useCallback(async () => {
-    // Try API first, fallback to localStorage
+    setIsLoading(true);
     try {
       const username = getCurrentUsername();
       const response = await fetch('/api/friends', {
         headers: { 'x-username': username }
       });
-      if (response.ok) {
-        const data = await response.json();
-        setFriends(data.friends || []);
-        setSentRequests(data.sentRequests || []);
-        setReceivedRequests(data.receivedRequests || []);
-        saveFriendsToStorage(data.friends || [], data.sentRequests || [], data.receivedRequests || []);
-      } else {
-        initializeMockFriends();
-      }
+      if (!response.ok) throw new Error('Failed to fetch friend data.');
+      
+      const data = await response.json();
+      setFriends(data.friends || []);
+      setSentRequests(data.sentRequests || []);
+      setReceivedRequests(data.receivedRequests || []);
     } catch (err) {
-      initializeMockFriends();
+      setError(err.message);
     } finally {
       setIsLoading(false);
     }
-  }, [initializeMockFriends, saveFriendsToStorage]);
+  }, []);
 
   useEffect(() => {
     fetchFriendData();
@@ -75,65 +42,64 @@ const Friends = () => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
     setError('');
+    setSuccess('');
     
-    // Mock search: create users based on search query
-    const mockUsers = [];
-    for (let i = 1; i <= 20; i++) {
-      const username = `test${i}`;
-      if (username.includes(searchQuery.toLowerCase())) {
-        mockUsers.push({
-          _id: `mock_${i}`,
-          username: username
+    try {
+        const response = await fetch(`/api/users/search?query=${searchQuery}`, {
+            headers: { 'x-username': getCurrentUsername() }
         });
-      }
+        if (!response.ok) throw new Error('Search failed.');
+        
+        const users = await response.json();
+        const currentUser = getCurrentUsername();
+        const sentOrReceivedIds = new Set([
+            ...sentRequests.map(r => r._id), 
+            ...receivedRequests.map(r => r._id),
+            ...friends.map(f => f._id)
+        ]);
+        
+        setSearchResults(users.filter(user => 
+            user.username !== currentUser && !sentOrReceivedIds.has(user._id)
+        ));
+    } catch (err) {
+        setError(err.message);
     }
-    
-    if (mockUsers.length === 0) {
-      // Generate based on search query
-      mockUsers.push({
-        _id: `mock_search_${searchQuery}`,
-        username: searchQuery
-      });
-    }
-    
-    setSearchResults(mockUsers);
   };
 
   const handleRequestAction = async (action, userId, username) => {
+    setError('');
+    setSuccess('');
     try {
-      const newFriends = [...friends];
-      const newSentRequests = [...sentRequests];
-      const newReceivedRequests = [...receivedRequests];
+        let url, body, method = 'POST';
 
-      if (action === 'request') {
-        // Add to sent requests
-        if (!newSentRequests.find(r => r._id === userId)) {
-          newSentRequests.push({ _id: userId, username });
+        if (action === 'request') {
+            url = '/api/friend-request';
+            body = { recipientId: userId };
+        } else if (action === 'accept' || action === 'reject') {
+            url = '/api/friend-request/respond';
+            body = { requesterId: userId, action };
+        } else if (action === 'unfriend' || action === 'cancel') {
+            url = '/api/friend/remove';
+            body = { friendId: userId };
+        } else {
+            return;
         }
-        setSearchResults(searchResults.filter(r => r._id !== userId));
-      } else if (action === 'accept') {
-        // Move from received to friends
-        newFriends.push({ _id: userId, username });
-        const index = newReceivedRequests.findIndex(r => r._id === userId);
-        if (index > -1) newReceivedRequests.splice(index, 1);
-      } else if (action === 'reject') {
-        // Remove from received requests or sent requests
-        const recIndex = newReceivedRequests.findIndex(r => r._id === userId);
-        const sentIndex = newSentRequests.findIndex(r => r._id === userId);
-        const friendIndex = newFriends.findIndex(r => r._id === userId);
-        
-        if (recIndex > -1) newReceivedRequests.splice(recIndex, 1);
-        if (sentIndex > -1) newSentRequests.splice(sentIndex, 1);
-        if (friendIndex > -1) newFriends.splice(friendIndex, 1);
-      }
 
-      setFriends(newFriends);
-      setSentRequests(newSentRequests);
-      setReceivedRequests(newReceivedRequests);
-      saveFriendsToStorage(newFriends, newSentRequests, newReceivedRequests);
-      
-      setSuccess(`Action completed!`);
-      setTimeout(() => setSuccess(''), 3000);
+        const response = await fetch(url, {
+            method,
+            headers: { 
+                'Content-Type': 'application/json',
+                'x-username': getCurrentUsername()
+            },
+            body: JSON.stringify(body),
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message);
+
+        setSuccess(data.message);
+        fetchFriendData(); // Re-fetch all data to ensure UI is in sync
+        setSearchResults([]); // Clear search results after an action
     } catch (err) {
       setError(err.message);
     }
@@ -154,8 +120,8 @@ const Friends = () => {
                   <button onClick={() => handleRequestAction('reject', user._id, user.username)} className="bg-red-600 hover:bg-red-700 px-2 py-1 rounded">Reject</button>
                 </div>
               )}
-              {actionType === 'friend' && <button onClick={() => handleRequestAction('reject', user._id, user.username)} className="bg-gray-600 hover:bg-gray-700 px-2 py-1 rounded">Unfriend</button>}
-              {actionType === 'sent' && <button onClick={() => handleRequestAction('reject', user._id, user.username)} className="bg-gray-600 hover:bg-gray-700 px-2 py-1 rounded">Cancel</button>}
+              {actionType === 'friend' && <button onClick={() => handleRequestAction('unfriend', user._id, user.username)} className="bg-gray-600 hover:bg-gray-700 px-2 py-1 rounded">Unfriend</button>}
+              {actionType === 'sent' && <button onClick={() => handleRequestAction('cancel', user._id, user.username)} className="bg-gray-600 hover:bg-gray-700 px-2 py-1 rounded">Cancel</button>}
             </li>
           ))}
         </ul>
@@ -164,26 +130,6 @@ const Friends = () => {
   );
 
   if (isLoading) return <div className="text-center text-white">Loading friends...</div>;
-
-  const handleAddTestFriends = async () => {
-    try {
-      // Create 10 test friends locally
-      const testFriends = [];
-      for (let i = 1; i <= 10; i++) {
-        testFriends.push({
-          _id: `test${i}`,
-          username: `test${i}`
-        });
-      }
-      
-      setFriends(testFriends);
-      saveFriendsToStorage(testFriends, sentRequests, receivedRequests);
-      setSuccess('✓ Added 10 test friends (test1-test10)!');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
-      setError(`Failed to add test friends: ${err.message}`);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-8">
@@ -196,15 +142,6 @@ const Friends = () => {
         </div>
         {error && <p className="text-red-500 text-center mb-4">{error}</p>}
         {success && <p className="text-green-500 text-center mb-4">{success}</p>}
-
-        <div className="mb-4 text-center">
-          <button 
-            onClick={handleAddTestFriends}
-            className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-md text-sm"
-          >
-            ➕ Add 10 Test Friends (test1-test10)
-          </button>
-        </div>
 
         <div className="bg-gray-800 p-6 rounded-lg mb-6">
           <h2 className="text-2xl font-bold mb-4">Find New Friends</h2>
@@ -225,21 +162,18 @@ const Friends = () => {
           )}
         </div>
 
-        {/* Friend Requests Section */}
         {receivedRequests.length > 0 && (
           <div className="mb-6">
             {renderUserList('📬 Friend Requests', receivedRequests, 'accept')}
           </div>
         )}
 
-        {/* Sent Requests Section */}
         {sentRequests.length > 0 && (
           <div className="mb-6">
             {renderUserList('📤 Sent Requests', sentRequests, 'sent')}
           </div>
         )}
 
-        {/* My Friends Section with Search */}
         <div className="mb-6">
           <div className="bg-gray-800 p-6 rounded-lg">
             <div className="flex justify-between items-center mb-4">
@@ -264,7 +198,7 @@ const Friends = () => {
                     <li key={friend._id} className="flex justify-between items-center bg-gray-700 p-3 rounded hover:bg-gray-600 transition">
                       <span className="font-medium">{friend.username}</span>
                       <button 
-                        onClick={() => handleRequestAction('reject', friend._id, friend.username)} 
+                        onClick={() => handleRequestAction('unfriend', friend._id, friend.username)} 
                         className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm"
                       >
                         Unfriend

@@ -10,14 +10,14 @@
 }
 
 .utility-button {
-  background-color: #333;
-  color: white;
-  border: 1px solid #555;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--bg-tertiary);
   padding: 0.5rem 1rem;
   cursor: pointer;
   transition: background-color 0.3s ease;
 }
 
 .utility-button:hover {
-  background-color: #555;
+  filter: brightness(1.05);
 }

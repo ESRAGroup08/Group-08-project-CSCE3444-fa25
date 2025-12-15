@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom'; // Import useNavigate
+import { Outlet, useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
 
+// MERGED: Kept teammate's dynamic server URL logic
 const getServerURL = () => {
   if (process.env.NODE_ENV === 'production') {
     return 'https://group-08-project-csce3444-fa25.onrender.com';
@@ -24,14 +25,10 @@ function App() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // On mount, check if a user is "logged in" (i.e., has a username in localStorage).
-    // If not, redirect them to the login page.
+    // MERGED: Kept our simplified auth check
     const storedUsername = localStorage.getItem('username');
-    if (!storedUsername) {
-        // If we are not already at the root path, redirect to login.
-        if (window.location.hash !== '#/') {
-             navigate('/');
-        }
+    if (!storedUsername && window.location.hash !== '#/') {
+      navigate('/');
     }
 
     const onConnect = () => setIsConnected(true);
@@ -47,7 +44,7 @@ function App() {
       socket.off('disconnect', onDisconnect);
       socket.off('connect_error', onConnectError);
     };
-  }, [navigate]); // Add navigate to dependency array
+  }, [navigate]);
 
   return (
     <div className="App">

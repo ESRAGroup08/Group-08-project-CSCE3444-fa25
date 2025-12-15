@@ -14,7 +14,10 @@ function Scoreboard() {
     <div className="container">
       <h2>🏆 Leaderboard</h2>
       {scores.length === 0 ? (
-        <p>No scores yet — finish a game to appear here!</p>
+        <div style={{ padding: '1rem', background: 'transparent' }}>
+          <p style={{ color: 'var(--text-primary, white)', fontWeight: 700 }}>No game records available to show.</p>
+          <p style={{ color: 'var(--text-secondary, #d1d5db)' }}>Play game to record the scoere</p>
+        </div>
       ) : (
         <table>
           <thead>

@@ -15,8 +15,8 @@
 
 .menu-button {
   clip-path: polygon(0% 50%, 8% 0%, 92% 0%, 100% 50%, 92% 100%, 8% 100%);
-  background-color: #5A4BFF;
-  color: white;
+  background-color: var(--accent);
+  color: var(--text-primary);
   font-weight: bold;
   text-transform: uppercase;
   border: none;
@@ -31,14 +31,15 @@
 }
 
 .menu-button:hover {
-  background-color: #4a3dff;
+  filter: brightness(0.9);
 }
 
 .menu-button.secondary {
   clip-path: polygon(0% 50%, 8% 0%, 92% 0%, 100% 50%, 92% 100%, 8% 100%);
-  background-color: #6c757d;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
 }
 
 .menu-button.secondary:hover {
-  background-color: #5a6268;
+  filter: brightness(1.05);
 }

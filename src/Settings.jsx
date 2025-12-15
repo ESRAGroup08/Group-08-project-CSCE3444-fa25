@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { applyTheme } from './utils.js';
 
 const Settings = () => {
   const [settings, setSettings] = useState({
@@ -19,49 +20,23 @@ const Settings = () => {
   const [success, setSuccess] = useState('');
   const [isDirty, setIsDirty] = useState(false);
 
-  // Apply theme to document
+  // Load saved settings from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('gameSettings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setSettings(prev => ({ ...prev, ...parsed }));
+      }
+    } catch (e) {
+      // ignore malformed storage
+      console.warn('Failed to parse saved settings', e);
+    }
+  }, []);
+  // Apply theme to document when theme changes
   useEffect(() => {
     applyTheme(settings.theme);
   }, [settings.theme]);
-
-  const applyTheme = (theme) => {
-    const root = document.documentElement;
-    
-    switch(theme) {
-      case 'light':
-        root.style.setProperty('--bg-primary', '#f5f5f5');
-        root.style.setProperty('--bg-secondary', '#ffffff');
-        root.style.setProperty('--bg-tertiary', '#e0e0e0');
-        root.style.setProperty('--text-primary', '#000000');
-        root.style.setProperty('--text-secondary', '#333333');
-        root.style.setProperty('--accent', '#0066cc');
-        document.body.style.backgroundColor = '#f5f5f5';
-        document.body.style.color = '#000000';
-        break;
-      
-      case 'neon':
-        root.style.setProperty('--bg-primary', '#0a0e27');
-        root.style.setProperty('--bg-secondary', '#1a1f3a');
-        root.style.setProperty('--bg-tertiary', '#2d3561');
-        root.style.setProperty('--text-primary', '#00ff88');
-        root.style.setProperty('--text-secondary', '#00ffff');
-        root.style.setProperty('--accent', '#ff00ff');
-        document.body.style.backgroundColor = '#0a0e27';
-        document.body.style.color = '#00ff88';
-        break;
-      
-      default: // dark
-        root.style.setProperty('--bg-primary', '#111827');
-        root.style.setProperty('--bg-secondary', '#1f2937');
-        root.style.setProperty('--bg-tertiary', '#374151');
-        root.style.setProperty('--text-primary', '#ffffff');
-        root.style.setProperty('--text-secondary', '#d1d5db');
-        root.style.setProperty('--accent', '#06b6d4');
-        document.body.style.backgroundColor = '#111827';
-        document.body.style.color = '#ffffff';
-        break;
-    }
-  };
 
   const handleSettingChange = (key, value) => {
     setSettings(prev => ({

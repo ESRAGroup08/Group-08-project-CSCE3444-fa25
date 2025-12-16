@@ -20,7 +20,8 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "https://group-08-project-csce3444-fa25.onrender.com",
-  "https://group-08-multi-feat-preview.onrender.com"
+  "https://group-08-multi-feat-preview.onrender.com",
+  "https://galactic-typing.onrender.com" // ADD THIS LINE
 ];
 
 const io = new Server(server, {
@@ -29,7 +30,7 @@ const io = new Server(server, {
 });
 
 // --- Database Connection ---
-mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/typing_game')
+mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://game_user:testuser123@gltp0.tez957z.mongodb.net/?appName=GLTP0')
   .then(() => console.log('MongoDB connected successfully.'))
   .catch(err => console.error('MongoDB connection error:', err));
 

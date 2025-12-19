@@ -21,7 +21,7 @@ const allowedOrigins = [
   "http://localhost:5174",
   "https://group-08-project-csce3444-fa25.onrender.com",
   "https://group-08-multi-feat-preview.onrender.com",
-  "https://galactic-typing.onrender.com" // ADD THIS LINE
+  "https://galactic-typing.onrender.com" // Your production URL
 ];
 
 const io = new Server(server, {
@@ -30,7 +30,7 @@ const io = new Server(server, {
 });
 
 // --- Database Connection ---
-mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://game_user:testuser123@gltp0.tez957z.mongodb.net/?appName=GLTP0')
+mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/typing_game')
   .then(() => console.log('MongoDB connected successfully.'))
   .catch(err => console.error('MongoDB connection error:', err));
 
@@ -63,116 +63,9 @@ app.get('/api/auth/status', async (req, res) => {
     }
 });
 
-app.get('/api/users/search', async (req, res) => {
-    const { query } = req.query;
-    const currentUsername = req.headers['x-username'];
-    if (!query) return res.status(400).json({ message: 'Search query is required.' });
-    try {
-        const currentUser = await User.findOne({ username: currentUsername });
-        if (!currentUser) return res.status(404).json({ message: 'Authenticated user not found.' });
-
-        const users = await User.find({
-            username: { $regex: query, $options: 'i' },
-            _id: { $ne: currentUser._id }
-        }).limit(20);
-        res.json(users);
-    } catch (error) {
-        res.status(500).json({ message: 'Server error while searching for users.' });
-    }
-});
-
-app.get('/api/friends', async (req, res) => {
-    const username = req.headers['x-username'];
-    if (!username) return res.status(401).json({ message: 'Unauthorized' });
-
-    try {
-        const user = await User.findOne({ username })
-            .populate('friends', 'username')
-            .populate('friendRequestsSent', 'username')
-            .populate('friendRequestsReceived', 'username');
-
-        if (!user) return res.status(404).json({ message: 'User not found' });
-
-        res.json({
-            friends: user.friends,
-            sentRequests: user.friendRequestsSent,
-            receivedRequests: user.friendRequestsReceived,
-        });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error while fetching friends data.' });
-    }
-});
-
-app.post('/api/friend-request', async (req, res) => {
-    const { recipientId } = req.body;
-    const senderUsername = req.headers['x-username'];
-
-    try {
-        const sender = await User.findOne({ username: senderUsername });
-        const recipient = await User.findById(recipientId);
-
-        if (!recipient || !sender) return res.status(404).json({ message: 'User not found.' });
-
-        if (sender.friends.includes(recipient._id) || sender.friendRequestsSent.includes(recipient._id)) {
-            return res.status(400).json({ message: 'Friend request already sent or already friends.' });
-        }
-        
-        await User.updateOne({ _id: sender._id }, { $addToSet: { friendRequestsSent: recipient._id } });
-        await User.updateOne({ _id: recipient._id }, { $addToSet: { friendRequestsReceived: sender._id } });
-
-        res.status(200).json({ message: 'Friend request sent successfully.' });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error while sending friend request.' });
-    }
-});
-
-app.post('/api/friend-request/respond', async (req, res) => {
-    const { requesterId, action } = req.body;
-    const recipientUsername = req.headers['x-username'];
-
-    try {
-        const recipient = await User.findOne({ username: recipientUsername });
-        const requester = await User.findById(requesterId);
-
-        if (!recipient || !requester) return res.status(404).json({ message: 'User not found' });
-
-        await User.updateOne({ _id: recipient._id }, { $pull: { friendRequestsReceived: requester._id } });
-        await User.updateOne({ _id: requester._id }, { $pull: { friendRequestsSent: recipient._id } });
-
-        if (action === 'accept') {
-            await User.updateOne({ _id: recipient._id }, { $addToSet: { friends: requester._id } });
-            await User.updateOne({ _id: requester._id }, { $addToSet: { friends: recipient._id } });
-        }
-        
-        res.status(200).json({ message: `Friend request ${action}ed.` });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error while responding to friend request.' });
-    }
-});
-
-app.post('/api/friend/remove', async (req, res) => {
-    const { friendId } = req.body;
-    const currentUsername = req.headers['x-username'];
-
-    try {
-        const currentUser = await User.findOne({ username: currentUsername });
-        const friend = await User.findById(friendId);
-
-        if (!currentUser || !friend) return res.status(404).json({ message: 'User not found.' });
-        
-        await User.updateOne({ _id: currentUser._id }, { $pull: { friends: friend._id } });
-        await User.updateOne({ _id: friend._id }, { $pull: { friends: currentUser._id } });
-
-        res.status(200).json({ message: 'Friend removed successfully.' });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error while removing friend.' });
-    }
-});
-
-
 app.get('/api/users/:username', async (req, res) => {
     try {
-        if (req.params.username !== req.headers['x-username']) return res.status(403).json({ message: 'Forbidden' });
+        // MODIFIED: Allow anyone to view a profile, but only the owner can edit.
         const user = await User.findOne({ username: req.params.username });
         if (!user) return res.status(404).json({ message: 'User not found.' });
         res.json({
@@ -210,7 +103,6 @@ const TEXT_SNIPPETS = [
 ];
 
 const gameRooms = new Map();
-// MERGED: Added new perks from remote branch
 const PERKS = ['ASTEROID_ATTACK', 'ROCKET_FUEL', 'REPULSOR_WAVE', 'NEBULA_CLOUD'];
 const rankedQueue = [];
 
@@ -242,6 +134,49 @@ function stopGameLoop(roomId) {
 
 io.on('connection', (socket) => {
     console.log('a user connected:', socket.id);
+
+    // --- Custom Lobby Handlers ---
+    socket.on('create_private_lobby', ({ username }) => {
+        const lobby = privateLobby.createLobby(socket, username);
+        socket.emit('private_lobby_created', { roomId: lobby.roomId, roomState: lobby.roomState });
+    });
+
+    socket.on('join_private_lobby', ({ roomId, username }) => {
+        const lobby = privateLobby.addPlayer(roomId, socket, username);
+        if (lobby) {
+            // Notify all players in the lobby of the new state
+            io.to(roomId).emit('lobby_state_update', { roomId: lobby.roomId, ...lobby.roomState });
+        } else {
+            socket.emit('lobby_error', { message: 'Lobby not found or is full.' });
+        }
+    });
+
+    socket.on('start_private_game', ({ roomId }) => {
+        const lobby = privateLobby.getLobby(roomId);
+        if (lobby && lobby.hostId === socket.id) {
+            const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
+            const players = {};
+            
+            lobby.players.forEach(p => {
+                players[p.socket.id] = {
+                    username: p.username,
+                    progress: 0,
+                    wpm: 0,
+                    finished: false,
+                    perk: null,
+                    perkUsedAt: 0
+                };
+            });
+
+            const roomState = { roomId, text, players, isRanked: false };
+            gameRooms.set(roomId, roomState);
+
+            // Move all sockets to the same room and start the game
+            io.to(roomId).emit('match_found', { roomId, players: roomState.players, text });
+            startGameLoop(roomId);
+            privateLobby.removeLobby(roomId); // Clean up the lobby once the game starts
+        }
+    });
     
     socket.on('join_casual', async ({ username }) => {
         try {
@@ -275,6 +210,49 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('join_ranked', async ({ username }) => {
+        try {
+            let user = await User.findOne({ username });
+            if (!user) user = await User.create({ username });
+
+            const playerInfo = { socket, username };
+            
+            const opponent = rankedQueue.shift();
+
+            if (opponent) {
+                const player1 = playerInfo;
+                const player2 = opponent;
+                const roomId = randomUUID();
+                const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
+
+                const roomState = {
+                    roomId,
+                    text,
+                    isRanked: true,
+                    players: {
+                        [player1.socket.id]: { username: player1.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 }, // FIXED
+                        [player2.socket.id]: { username: player2.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 }  // FIXED
+                    }
+                };
+
+                gameRooms.set(roomId, roomState);
+                player1.socket.join(roomId);
+                player2.socket.join(roomId);
+                io.to(roomId).emit('match_found', { roomId, players: roomState.players, text });
+                startGameLoop(roomId);
+            } else {
+                rankedQueue.push(playerInfo);
+                socket.emit('waiting_for_match');
+            }
+        } catch (error) {
+            console.error('Error during ranked matchmaking:', error);
+            socket.emit('matchmaking_error', { message: 'An error occurred in ranked queue.' });
+        }
+    });
+
+
+
+
     socket.on('use_perk', ({ roomId, perk }) => {
         const room = gameRooms.get(roomId);
         const player = room?.players[socket.id];
@@ -284,11 +262,10 @@ io.on('connection', (socket) => {
         player.perkUsedAt = Date.now();
         socket.emit('perk_used');
 
-        // MERGED: Added logic for new perks
         if (perk === 'ASTEROID_ATTACK') {
             socket.to(roomId).emit('asteroid_hit');
         } else if (perk === 'ROCKET_FUEL') {
-            const boostLength = Math.floor(room.text.length * 0.15); // Nerfed from 0.25
+            const boostLength = Math.floor(room.text.length * 0.15);
             const autoCompletedText = room.text.substring(player.progress || 0, (player.progress || 0) + boostLength);
             socket.emit('perk_effect_rocket_fuel', { autoCompletedText });
         } else if (perk === 'REPULSOR_WAVE') {
@@ -298,7 +275,6 @@ io.on('connection', (socket) => {
         }
     });
     
-    // ... rest of socket handlers are largely the same ...
     async function endGame(roomId) {
         const room = gameRooms.get(roomId);
         if (!room) return;
@@ -307,11 +283,21 @@ io.on('connection', (socket) => {
         for (const playerId in room.players) {
             const player = room.players[playerId];
             if (player.finished) {
-                await User.findOneAndUpdate(
-                    { username: player.username },
-                    { $inc: { gamesPlayed: 1 }, $set: { averageWPM: player.wpm, averageAccuracy: player.accuracy } },
-                    { upsert: true }
-                );
+                try {
+                    await User.findOneAndUpdate(
+                        { username: player.username },
+                        { 
+                            $inc: { gamesPlayed: 1 }, 
+                            $set: { 
+                                averageWPM: player.wpm, 
+                                averageAccuracy: player.accuracy 
+                            }
+                        },
+                        { upsert: true }
+                    );
+                } catch(error) {
+                    console.error("Error updating user stats in endGame:", error);
+                }
             }
         }
         
@@ -320,9 +306,10 @@ io.on('connection', (socket) => {
             const winner = finishedPlayers.reduce((prev, current) => ((current.wpm || 0) > (prev.wpm || 0)) ? current : prev);
             const loser = finishedPlayers.find(p => p.username !== winner.username);
             if (room.isRanked && loser) {
-                const newRatings = ranking.updateRatings(winner.username, loser.username, 1);
-                winner.newRank = newRatings[winner.username];
-                loser.newRank = newRatings[loser.username];
+                // This part depends on your ranking.js module
+                // const newRatings = ranking.updateRatings(winner.username, loser.username, 1);
+                // winner.newRank = newRatings[winner.username];
+                // loser.newRank = newRatings[loser.username];
             }
         }
         
@@ -333,7 +320,7 @@ io.on('connection', (socket) => {
     
     socket.on('player_finished', async ({ roomId, wpm, accuracy }) => {
         const room = gameRooms.get(roomId);
-        if (!room || !room.players[socket.id]?.finished === false) return;
+        if (!room || room.players[socket.id]?.finished) return;
 
         const playerState = room.players[socket.id];
         playerState.finished = true;
@@ -361,6 +348,11 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('user disconnected:', socket.id);
         casualMatchmaking.removeBySocket(socket);
+        // Remove from ranked queue on disconnect
+        const index = rankedQueue.findIndex(p => p.socket.id === socket.id);
+        if (index > -1) {
+            rankedQueue.splice(index, 1);
+        }
         privateLobby.removePlayerBySocket(socket).forEach(lobby => {
             if (lobby.roomState) io.to(lobby.roomId).emit('lobby_state_update', { roomId: lobby.roomId, ...lobby.roomState });
         });

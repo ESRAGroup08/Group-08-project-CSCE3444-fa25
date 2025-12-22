@@ -30,10 +30,10 @@ const io = new Server(server, {
 });
 
 // --- Database Connection ---
-mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/typing_game')
+mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://game_user:testuser123@gltp0.tez957z.mongodb.net/?appName=GLTP0')
   .then(() => console.log('MongoDB connected successfully.'))
   .catch(err => console.error('MongoDB connection error:', err));
-
+  
 // --- Middleware ---
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());

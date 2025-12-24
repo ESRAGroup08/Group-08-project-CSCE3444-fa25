@@ -16,12 +16,24 @@ const Friends = () => {
 
   const fetchFriendData = useCallback(async () => {
     setIsLoading(true);
+    setError('');
     try {
       const username = getCurrentUsername();
+      if (!username) throw new Error("You must be logged in.");
+
       const response = await fetch('/api/friends', {
         headers: { 'x-username': username }
       });
-      if (!response.ok) throw new Error('Failed to fetch friend data.');
+      
+      if (!response.ok) {
+        const errorData = await response.text();
+        // Check for the HTML error
+        if (errorData.startsWith('<!DOCTYPE html')) {
+            throw new Error("API endpoint not found. Server may be misconfigured.");
+        }
+        const jsonData = JSON.parse(errorData);
+        throw new Error(jsonData.message || 'Failed to fetch friend data.');
+      }
       
       const data = await response.json();
       setFriends(data.friends || []);
@@ -45,48 +57,47 @@ const Friends = () => {
     setSuccess('');
     
     try {
-        const response = await fetch(`/api/users/search?query=${searchQuery}`, {
+        const response = await fetch(`/api/users/search?query=${encodeURIComponent(searchQuery)}`, {
             headers: { 'x-username': getCurrentUsername() }
         });
         if (!response.ok) throw new Error('Search failed.');
         
         const users = await response.json();
-        const currentUser = getCurrentUsername();
-        const sentOrReceivedIds = new Set([
-            ...sentRequests.map(r => r._id), 
-            ...receivedRequests.map(r => r._id),
-            ...friends.map(f => f._id)
+        const existingIds = new Set([
+            ...friends.map(f => f._id),
+            ...sentRequests.map(r => r._id),
+            ...receivedRequests.map(r => r._id)
         ]);
         
-        setSearchResults(users.filter(user => 
-            user.username !== currentUser && !sentOrReceivedIds.has(user._id)
-        ));
+        setSearchResults(users.filter(user => !existingIds.has(user._id)));
+
     } catch (err) {
         setError(err.message);
     }
   };
 
-  const handleRequestAction = async (action, userId, username) => {
+  const handleRequestAction = async (action, userId) => {
     setError('');
     setSuccess('');
+    let url = '';
+    let body = {};
+
+    if (action === 'request') {
+        url = '/api/friend-request/send';
+        body = { recipientId: userId };
+    } else if (action === 'accept' || action === 'reject') {
+        url = '/api/friend-request/respond';
+        body = { requesterId: userId, action };
+    } else if (action === 'unfriend' || action === 'cancel') {
+        url = '/api/friend/remove';
+        body = { otherUserId: userId };
+    } else {
+        return;
+    }
+
     try {
-        let url, body, method = 'POST';
-
-        if (action === 'request') {
-            url = '/api/friend-request';
-            body = { recipientId: userId };
-        } else if (action === 'accept' || action === 'reject') {
-            url = '/api/friend-request/respond';
-            body = { requesterId: userId, action };
-        } else if (action === 'unfriend' || action === 'cancel') {
-            url = '/api/friend/remove';
-            body = { friendId: userId };
-        } else {
-            return;
-        }
-
         const response = await fetch(url, {
-            method,
+            method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
                 'x-username': getCurrentUsername()
@@ -98,8 +109,12 @@ const Friends = () => {
         if (!response.ok) throw new Error(data.message);
 
         setSuccess(data.message);
-        fetchFriendData(); // Re-fetch all data to ensure UI is in sync
-        setSearchResults([]); // Clear search results after an action
+        setTimeout(() => setSuccess(''), 3000);
+        
+        // Refresh all data and clear search
+        fetchFriendData(); 
+        setSearchQuery('');
+        setSearchResults([]);
     } catch (err) {
       setError(err.message);
     }
@@ -108,20 +123,20 @@ const Friends = () => {
   const renderUserList = (title, users, actionType) => (
     <div className="bg-gray-800 p-4 rounded-lg">
       <h3 className="text-xl font-bold mb-4">{title}</h3>
-      {users.length === 0 ? <p className="text-gray-400">No users found.</p> : (
+      {users.length === 0 ? <p className="text-gray-400">None</p> : (
         <ul className="space-y-2">
           {users.map(user => (
             <li key={user._id} className="flex justify-between items-center bg-gray-700 p-2 rounded">
               <span>{user.username}</span>
-              {actionType === 'request' && <button onClick={() => handleRequestAction('request', user._id, user.username)} className="bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded">Send Request</button>}
+              {actionType === 'request' && <button onClick={() => handleRequestAction('request', user._id)} className="bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded">Send Request</button>}
               {actionType === 'accept' && (
                 <div className="space-x-2">
-                  <button onClick={() => handleRequestAction('accept', user._id, user.username)} className="bg-green-600 hover:bg-green-700 px-2 py-1 rounded">Accept</button>
-                  <button onClick={() => handleRequestAction('reject', user._id, user.username)} className="bg-red-600 hover:bg-red-700 px-2 py-1 rounded">Reject</button>
+                  <button onClick={() => handleRequestAction('accept', user._id)} className="bg-green-600 hover:bg-green-700 px-2 py-1 rounded">Accept</button>
+                  <button onClick={() => handleRequestAction('reject', user._id)} className="bg-red-600 hover:bg-red-700 px-2 py-1 rounded">Reject</button>
                 </div>
               )}
-              {actionType === 'friend' && <button onClick={() => handleRequestAction('unfriend', user._id, user.username)} className="bg-gray-600 hover:bg-gray-700 px-2 py-1 rounded">Unfriend</button>}
-              {actionType === 'sent' && <button onClick={() => handleRequestAction('cancel', user._id, user.username)} className="bg-gray-600 hover:bg-gray-700 px-2 py-1 rounded">Cancel</button>}
+              {actionType === 'friend' && <button onClick={() => handleRequestAction('unfriend', user._id)} className="bg-red-600 hover:bg-red-700 px-2 py-1 rounded">Unfriend</button>}
+              {actionType === 'sent' && <button onClick={() => handleRequestAction('cancel', user._id)} className="bg-gray-600 hover:bg-gray-700 px-2 py-1 rounded">Cancel</button>}
             </li>
           ))}
         </ul>
@@ -189,23 +204,13 @@ const Friends = () => {
             {friends.length === 0 ? (
               <p className="text-gray-400">No friends yet. Search and add some!</p>
             ) : (
-              <ul className="space-y-2">
-                {friends
-                  .filter(friend => 
-                    friend.username.toLowerCase().includes(friendSearchQuery.toLowerCase())
-                  )
-                  .map(friend => (
-                    <li key={friend._id} className="flex justify-between items-center bg-gray-700 p-3 rounded hover:bg-gray-600 transition">
-                      <span className="font-medium">{friend.username}</span>
-                      <button 
-                        onClick={() => handleRequestAction('unfriend', friend._id, friend.username)} 
-                        className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm"
-                      >
-                        Unfriend
-                      </button>
-                    </li>
-                  ))}
-              </ul>
+              renderUserList(
+                  'Your Friends', 
+                  friends.filter(friend => 
+                      friend.username.toLowerCase().includes(friendSearchQuery.toLowerCase())
+                  ), 
+                  'friend'
+              )
             )}
           </div>
         </div>

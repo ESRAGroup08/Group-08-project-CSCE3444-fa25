@@ -193,6 +193,20 @@ app.post('/api/friend/remove', async (req, res) => {
     }
 });
 
+app.get('/api/leaderboard', async (req, res) => {
+    try {
+        const topPlayers = await User.find({})
+            .sort({ rating: -1 }) // Sort by rating, highest first
+            .limit(25)            // Limit to top 25
+            .select('username rating gamesPlayed'); // Select only needed fields
+
+        res.json(topPlayers);
+    } catch (error) {
+        console.error('Error fetching leaderboard data:', error);
+        res.status(500).json({ message: 'Server error while fetching leaderboard.' });
+    }
+});
+
 
 const PORT = process.env.PORT || 3000;
 
@@ -336,10 +350,100 @@ io.on('connection', (socket) => {
     });
 
     // --- In-Game Handlers ---
-    socket.on('use_perk', ({ roomId, perk }) => { /* ... */ });
-    socket.on('player_finished', async ({ roomId, wpm, accuracy }) => { /* ... */ });
+    socket.on('use_perk', ({ roomId, perk }) => {
+        const room = gameRooms.get(roomId);
+        const player = room?.players[socket.id];
+        if (!player || player.perk !== perk) return;
+
+        player.perk = null;
+        player.perkUsedAt = Date.now();
+        socket.emit('perk_used');
+
+        if (perk === 'ASTEROID_ATTACK') socket.to(roomId).emit('asteroid_hit');
+        else if (perk === 'ROCKET_FUEL') {
+            const boostLength = Math.floor(room.text.length * 0.15);
+            const autoCompletedText = room.text.substring(player.progress || 0, (player.progress || 0) + boostLength);
+            socket.emit('perk_effect_rocket_fuel', { autoCompletedText });
+        } 
+        else if (perk === 'REPULSOR_WAVE') socket.to(roomId).emit('repulsor_hit');
+        else if (perk === 'NEBULA_CLOUD') socket.to(roomId).emit('nebula_hit');
+    });
     
-    // ... Other handlers like endGame ...
+        // RESTORED: endGame function
+    async function endGame(roomId) {
+        const room = gameRooms.get(roomId);
+        if (!room) return;
+        if (room.suddenDeathTimer) clearTimeout(room.suddenDeathTimer);
+
+        const finishedPlayers = Object.values(room.players).filter(p => p.finished);
+
+        // Update stats for all finished players
+        for (const player of finishedPlayers) {
+            await User.findOneAndUpdate(
+                { username: player.username },
+                { 
+                    $inc: { gamesPlayed: 1 }, 
+                    $set: { averageWPM: player.wpm, averageAccuracy: player.accuracy } 
+                },
+                { upsert: true }
+            );
+        }
+        
+        // Handle ELO calculation for ranked games
+        if (room.isRanked && finishedPlayers.length >= 2) {
+            const winner = finishedPlayers.reduce((prev, current) => ((current.wpm || 0) > (prev.wpm || 0)) ? current : prev);
+            const loser = finishedPlayers.find(p => p.username !== winner.username);
+            
+            if (winner && loser) {
+                const winnerDoc = await User.findOne({ username: winner.username });
+                const loserDoc = await User.findOne({ username: loser.username });
+
+                const newRatings = ranking.updateRatings(winnerDoc.rating, loserDoc.rating, 1);
+                
+                await User.updateOne({ _id: winnerDoc._id }, { $set: { rating: newRatings.playerA } });
+                await User.updateOne({ _id: loserDoc._id }, { $set: { rating: newRatings.playerB } });
+
+                // Attach new ratings to the payload to send to clients
+                const winnerPlayerState = Object.values(room.players).find(p => p.username === winner.username);
+                const loserPlayerState = Object.values(room.players).find(p => p.username === loser.username);
+                if (winnerPlayerState) winnerPlayerState.newRank = newRatings.playerA;
+                if (loserPlayerState) loserPlayerState.newRank = newRatings.playerB;
+            }
+        }
+        
+        io.to(roomId).emit('game_over', { players: room.players });
+        stopGameLoop(roomId);
+        setTimeout(() => gameRooms.delete(roomId), 10000); // Clean up room after a delay
+    }
+    
+    // RESTORED: player_finished handler
+    socket.on('player_finished', async ({ roomId, wpm, accuracy }) => {
+        const room = gameRooms.get(roomId);
+        if (!room || !room.players[socket.id] || room.players[socket.id].finished) return;
+
+        const playerState = room.players[socket.id];
+        playerState.finished = true;
+        playerState.wpm = wpm;
+        playerState.accuracy = accuracy;
+        
+        io.to(roomId).emit('opponent_progress', { playerId: socket.id, progress: 100, wpm: Math.round(wpm), finished: true });
+
+        const playerStates = Object.values(room.players);
+        const finishedCount = playerStates.filter(p => p.finished).length;
+        const totalPlayers = playerStates.length;
+
+        if (finishedCount === totalPlayers) {
+            if (room.suddenDeathTimer) clearTimeout(room.suddenDeathTimer);
+            await endGame(roomId);
+        } else if (finishedCount === 1 && totalPlayers > 1) {
+            const countdownDuration = 15;
+            io.to(roomId).emit('suddenDeath', { duration: countdownDuration });
+            room.suddenDeathTimer = setTimeout(() => endGame(roomId), countdownDuration * 1000);
+        } else if (totalPlayers === 1) {
+            await endGame(roomId);
+        }
+    });
+    
 
     socket.on('disconnect', () => {
         console.log('user disconnected:', socket.id);

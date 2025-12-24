@@ -6,16 +6,19 @@ const LeaderboardPage = () => {
   const navigate = useNavigate();
 
   return (
-    <div style={{ padding: '2rem' }}>
-      <h1 style={{ color: 'var(--text-primary, white)' }}>Global Leaderboard</h1>
-      <Scoreboard />
-
-      <button
-        onClick={() => navigate('/menu')}
-        style={{ marginTop: '1rem', color: 'var(--text-primary, black)' }}
-      >
-        Back to Menu
-      </button>
+    <div className="min-h-screen bg-gray-900 text-white p-8 flex flex-col items-center">
+      <div className="w-full max-w-4xl">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-4xl font-bold text-cyan-400">Global Leaderboard</h1>
+          <button
+            onClick={() => navigate('/menu')}
+            className="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded-md text-white transition"
+          >
+            ← Back to Menu
+          </button>
+        </div>
+        <Scoreboard />
+      </div>
     </div>
   );
 };

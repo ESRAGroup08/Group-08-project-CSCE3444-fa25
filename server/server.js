@@ -42,6 +42,37 @@ app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
 
+
+// --- Daily Challenges Definitions ---
+const CHALLENGES = {
+  'SPEED_DEMON': { id: 'SPEED_DEMON', description: 'Reach 80 WPM in a single game', reward: 25, target: 80, type: 'wpm' },
+  'ACCURACY_MASTER': { id: 'ACCURACY_MASTER', description: 'Achieve 98% accuracy in a game', reward: 30, target: 98, type: 'accuracy' },
+  'VICTORY_STREAK': { id: 'VICTORY_STREAK', description: 'Win 2 games in a row', reward: 50, target: 2, type: 'win_streak' },
+  'PLAY_THREE': { id: 'PLAY_THREE', description: 'Play 3 games (win or lose)', reward: 15, target: 3, type: 'play_games' }
+};
+
+// --- Daily Challenge Helper Functions ---
+async function checkAndResetChallenges(user) {
+    const now = new Date();
+    const lastReset = new Date(user.challengesLastReset);
+    const isNewDay = now.setHours(0,0,0,0) > lastReset.setHours(0,0,0,0);
+
+    if (isNewDay) {
+        user.dailyChallenges = Object.values(CHALLENGES).map(c => ({
+            challengeId: c.id,
+            description: c.description,
+            reward: c.reward,
+            progress: 0,
+            target: c.target,
+            completed: false
+        }));
+        user.challengesLastReset = new Date();
+        await user.save();
+        console.log(`Reset daily challenges for ${user.username}`);
+    }
+    return user;
+}
+
 /* --- USER & PROFILE API ROUTES --- */
 app.post('/api/login', async (req, res) => {
   const { username } = req.body;
@@ -204,6 +235,27 @@ app.get('/api/leaderboard', async (req, res) => {
     } catch (error) {
         console.error('Error fetching leaderboard data:', error);
         res.status(500).json({ message: 'Server error while fetching leaderboard.' });
+    }
+});
+
+// NEW: API Endpoint for Daily Challenges
+app.get('/api/challenges', async (req, res) => {
+    const username = req.headers['x-username'];
+    if (!username) return res.status(401).json({ message: 'Unauthorized' });
+
+    try {
+        let user = await User.findOne({ username });
+        if (!user) return res.status(404).json({ message: 'User not found' });
+        
+        user = await checkAndResetChallenges(user);
+
+        res.json({
+            dailyChallenges: user.dailyChallenges,
+            challengesLastReset: user.challengesLastReset
+        });
+    } catch (error) {
+        console.error("Error fetching challenges:", error);
+        res.status(500).json({ message: 'Server error fetching challenges.' });
     }
 });
 

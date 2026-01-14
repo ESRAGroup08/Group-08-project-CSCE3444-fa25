@@ -7,12 +7,10 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const { randomUUID } = require('crypto');
 
-const casualMatchmaking = require('./casualMatchmaking');
-const ranking = require('./ranking');
 const privateLobby = require('./privateLobby');
 const User = require('./models/User');
 
-// --- Register User model for population ---
+// --- Register User model ---
 mongoose.model('User');
 
 const app = express();
@@ -37,483 +35,257 @@ mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://game_user:testuser123@g
   .then(() => console.log('MongoDB connected successfully.'))
   .catch(err => console.error('MongoDB connection error:', err));
   
-// --- Middleware ---
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
 
-
-// --- Daily Challenges Definitions ---
-const CHALLENGES = {
-  'SPEED_DEMON': { id: 'SPEED_DEMON', description: 'Reach 80 WPM in a single game', reward: 25, target: 80, type: 'wpm' },
-  'ACCURACY_MASTER': { id: 'ACCURACY_MASTER', description: 'Achieve 98% accuracy in a game', reward: 30, target: 98, type: 'accuracy' },
-  'VICTORY_STREAK': { id: 'VICTORY_STREAK', description: 'Win 2 games in a row', reward: 50, target: 2, type: 'win_streak' },
-  'PLAY_THREE': { id: 'PLAY_THREE', description: 'Play 3 games (win or lose)', reward: 15, target: 3, type: 'play_games' }
-};
-
-// --- Daily Challenge Helper Functions ---
-async function checkAndResetChallenges(user) {
-    const now = new Date();
-    const lastReset = new Date(user.challengesLastReset);
-    const isNewDay = now.setHours(0,0,0,0) > lastReset.setHours(0,0,0,0);
-
-    if (isNewDay) {
-        user.dailyChallenges = Object.values(CHALLENGES).map(c => ({
-            challengeId: c.id,
-            description: c.description,
-            reward: c.reward,
-            progress: 0,
-            target: c.target,
-            completed: false
-        }));
-        user.challengesLastReset = new Date();
-        await user.save();
-        console.log(`Reset daily challenges for ${user.username}`);
-    }
-    return user;
-}
-
-/* --- USER & PROFILE API ROUTES --- */
-app.post('/api/login', async (req, res) => {
-  const { username } = req.body;
-  if (!username) return res.status(400).json({ message: "Username is required." });
-  try {
-    await User.findOneAndUpdate({ username }, { $setOnInsert: { username } }, { upsert: true, new: true });
-    res.status(200).json({ message: "Logged in successfully", user: { username } });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error during login.' });
-  }
-});
-
-app.get('/api/auth/status', async (req, res) => {
-    const username = req.headers['x-username'];
-    if (!username) return res.json({ isAuthenticated: false, user: null });
-    try {
-        const user = await User.findOne({ username });
-        res.json({ isAuthenticated: !!user, user: user ? { username: user.username } : null });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error during auth check.' });
-    }
-});
-
-app.get('/api/users/:username', async (req, res) => {
-    try {
-        const user = await User.findOne({ username: req.params.username });
-        if (!user) return res.status(404).json({ message: 'User not found.' });
-        res.json({
-            username: user.username,
-            gamesPlayed: user.gamesPlayed,
-            averageWPM: user.averageWPM,
-            averageAccuracy: user.averageAccuracy,
-        });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error while fetching user data.' });
-    }
-});
-
-app.put('/api/users/:username', async (req, res) => {
-    try {
-        if (req.params.username !== req.headers['x-username']) return res.status(403).json({ message: 'Forbidden' });
-        const { newUsername } = req.body;
-        if (!newUsername || newUsername.trim().length === 0) return res.status(400).json({ message: 'New username cannot be empty.' });
-        if (await User.findOne({ username: newUsername })) return res.status(409).json({ message: 'This username is already taken.' });
-        const user = await User.findOneAndUpdate({ username: req.params.username }, { $set: { username: newUsername } }, { new: true });
-        if (!user) return res.status(404).json({ message: 'User not found.' });
-        res.json({ message: 'Username updated successfully!', username: user.username });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error while updating username.' });
-    }
-});
-
-/* --- FRIENDS API ROUTES --- */
-app.get('/api/users/search', async (req, res) => {
-    const { query } = req.query;
-    if (!query) return res.status(400).json({ message: 'Search query is required.' });
-    try {
-        const users = await User.find({ username: { $regex: query, $options: 'i' } }).limit(10);
-        res.json(users.map(u => ({ _id: u._id, username: u.username })));
-    } catch (error) {
-        res.status(500).json({ message: 'Server error while searching for users.' });
-    }
-});
-
-app.get('/api/friends', async (req, res) => {
-    const username = req.headers['x-username'];
-    if (!username) return res.status(401).json({ message: 'Unauthorized' });
-    try {
-        const user = await User.findOne({ username })
-            .populate('friends', 'username')
-            .populate('friendRequestsSent', 'username')
-            .populate('friendRequestsReceived', 'username');
-        if (!user) return res.status(404).json({ message: 'User not found' });
-        res.json({
-            friends: user.friends,
-            sentRequests: user.friendRequestsSent,
-            receivedRequests: user.friendRequestsReceived,
-        });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error while fetching friends data.' });
-    }
-});
-
-app.post('/api/friend-request/send', async (req, res) => {
-    const senderUsername = req.headers['x-username'];
-    const { recipientId } = req.body;
-    try {
-        const sender = await User.findOne({ username: senderUsername });
-        const recipient = await User.findById(recipientId);
-        if (!sender || !recipient) return res.status(404).json({ message: 'User not found.' });
-        if (sender._id.equals(recipient._id)) return res.status(400).json({ message: 'You cannot add yourself.' });
-
-        await User.findByIdAndUpdate(sender._id, { $addToSet: { friendRequestsSent: recipient._id } });
-        await User.findByIdAndUpdate(recipient._id, { $addToSet: { friendRequestsReceived: sender._id } });
-        res.status(200).json({ message: 'Friend request sent.' });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error sending request.' });
-    }
-});
-
-app.post('/api/friend-request/accept', async (req, res) => {
-    const acceptorUsername = req.headers['x-username'];
-    const { senderId } = req.body;
-    try {
-        const acceptor = await User.findOne({ username: acceptorUsername });
-        const sender = await User.findById(senderId);
-        if (!acceptor || !sender) return res.status(404).json({ message: 'User not found.' });
-
-        await User.findByIdAndUpdate(acceptor._id, {
-            $addToSet: { friends: sender._id },
-            $pull: { friendRequestsReceived: sender._id }
-        });
-        await User.findByIdAndUpdate(sender._id, {
-            $addToSet: { friends: acceptor._id },
-            $pull: { friendRequestsSent: acceptor._id }
-        });
-        res.status(200).json({ message: 'Friend request accepted.' });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error accepting request.' });
-    }
-});
-
-app.post('/api/friend-request/reject', async (req, res) => {
-    const currentUserUsername = req.headers['x-username'];
-    const { otherUserId } = req.body;
-    try {
-        const currentUser = await User.findOne({ username: currentUserUsername });
-        const otherUser = await User.findById(otherUserId);
-        if (!currentUser || !otherUser) return res.status(404).json({ message: 'User not found.' });
-
-        await User.findByIdAndUpdate(currentUser._id, { $pull: { friendRequestsReceived: otherUser._id, friendRequestsSent: otherUser._id } });
-        await User.findByIdAndUpdate(otherUser._id, { $pull: { friendRequestsSent: currentUser._id, friendRequestsReceived: currentUser._id } });
-        res.status(200).json({ message: 'Request rejected or cancelled.' });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error rejecting request.' });
-    }
-});
-
-app.post('/api/friend/remove', async (req, res) => {
-    const currentUserUsername = req.headers['x-username'];
-    const { friendIdToRemove } = req.body;
-    try {
-        const currentUser = await User.findOne({ username: currentUserUsername });
-        await User.findByIdAndUpdate(currentUser._id, { $pull: { friends: friendIdToRemove } });
-        await User.findByIdAndUpdate(friendIdToRemove, { $pull: { friends: currentUser._id } });
-        res.status(200).json({ message: 'Friend removed.' });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error removing friend.' });
-    }
-});
-
-app.get('/api/leaderboard', async (req, res) => {
-    try {
-        const topPlayers = await User.find({})
-            .sort({ rating: -1 }) // Sort by rating, highest first
-            .limit(25)            // Limit to top 25
-            .select('username rating gamesPlayed'); // Select only needed fields
-
-        res.json(topPlayers);
-    } catch (error) {
-        console.error('Error fetching leaderboard data:', error);
-        res.status(500).json({ message: 'Server error while fetching leaderboard.' });
-    }
-});
-
-// NEW: API Endpoint for Daily Challenges
-app.get('/api/challenges', async (req, res) => {
-    const username = req.headers['x-username'];
-    if (!username) return res.status(401).json({ message: 'Unauthorized' });
-
-    try {
-        let user = await User.findOne({ username });
-        if (!user) return res.status(404).json({ message: 'User not found' });
-        
-        user = await checkAndResetChallenges(user);
-
-        res.json({
-            dailyChallenges: user.dailyChallenges,
-            challengesLastReset: user.challengesLastReset
-        });
-    } catch (error) {
-        console.error("Error fetching challenges:", error);
-        res.status(500).json({ message: 'Server error fetching challenges.' });
-    }
-});
-
-
-const PORT = process.env.PORT || 3000;
-
-// --- Socket.IO Game Logic ---
+const gameRooms = new Map();
+const rankedQueue = [];
 const TEXT_SNIPPETS = [
     'The cosmos is vast and full of wonders, from shimmering nebulas to swirling galaxies.',
     'A lone spaceship drifted through the asteroid field, its pilot expertly dodging the floating rocks.',
     'Quantum mechanics is the theoretical basis of modern physics that explains the nature and behavior of matter and energy on the atomic and subatomic level.',
 ];
 
-const gameRooms = new Map();
-const PERKS = ['ASTEROID_ATTACK', 'ROCKET_FUEL', 'REPULSOR_WAVE', 'NEBULA_CLOUD'];
-const rankedQueue = [];
-
-function startGameLoop(roomId) {
-    const room = gameRooms.get(roomId);
-    if (!room) return;
-    const perkInterval = Math.random() * 2000 + 5000;
-    room.gameInterval = setInterval(() => {
-        const playerIds = Object.keys(room.players);
-        const now = Date.now();
-        const cooldown = 4000 + Math.random() * 1000;
-        const eligiblePlayers = playerIds.filter(id => !room.players[id].perk && (now - (room.players[id].perkUsedAt || 0) > cooldown));
-        if (eligiblePlayers.length > 0) {
-            const randomPlayerId = eligiblePlayers[Math.floor(Math.random() * eligiblePlayers.length)];
-            const randomPerk = PERKS[Math.floor(Math.random() * PERKS.length)];
-            room.players[randomPlayerId].perk = randomPerk;
-            io.to(randomPlayerId).emit('perk_granted', { perk: randomPerk });
-        }
-    }, perkInterval);
+// --- Helper Functions ---
+function getCleanRoomState(room) {
+    if (!room) return null;
+    return {
+        roomId: room.roomId,
+        players: room.players,
+        text: room.text,
+        status: room.status,
+        lobbyEndTime: room.lobbyEndTime,
+        suddenDeathEndTime: room.suddenDeathEndTime,
+        isRanked: room.isRanked
+    };
 }
 
-function stopGameLoop(roomId) {
+function endGame(roomId) {
     const room = gameRooms.get(roomId);
-    if (room && room.gameInterval) {
-        clearInterval(room.gameInterval);
-        delete room.gameInterval;
-    }
+    if (!room || room.status === 'finished') return;
+
+    console.log(`Room ${roomId}: Ending game.`);
+    if (room.timerId) clearTimeout(room.timerId);
+    
+    room.status = 'finished';
+
+    // Find winner by progress (if multiple at 100%, first finished is winner)
+    const playersArr = Object.entries(room.players).map(([id, p]) => ({ ...p, id }));
+    const winner = playersArr.sort((a, b) => {
+        if (a.finished && !b.finished) return -1;
+        if (!a.finished && b.finished) return 1;
+        return b.progress - a.progress;
+    })[0];
+
+    io.to(roomId).emit('game_over', { 
+        players: room.players,
+        winnerId: winner ? winner.id : null
+    });
+    
+    setTimeout(() => gameRooms.delete(roomId), 300000);
+}
+
+function startCountdown(roomId) {
+    const room = gameRooms.get(roomId);
+    if (!room) return;
+    
+    console.log(`Room ${roomId}: Starting countdown.`);
+    room.status = 'countdown';
+    room.lobbyEndTime = Date.now() + 3000;
+    
+    io.to(roomId).emit('room_state', getCleanRoomState(room));
+
+    setTimeout(() => {
+        const r = gameRooms.get(roomId);
+        if (!r) return;
+        console.log(`Room ${roomId}: Game Started!`);
+        r.status = 'playing';
+        r.lobbyEndTime = null;
+        io.to(roomId).emit('room_state', getCleanRoomState(r));
+    }, 3000);
 }
 
 io.on('connection', (socket) => {
-    console.log('a user connected:', socket.id);
-    
-    // --- Custom Lobby Handlers ---
+    console.log('User connected:', socket.id);
+
+    const joinGame = (username, isRanked) => {
+        let foundRoom = null;
+        for (const [id, r] of gameRooms) {
+            if (Object.keys(r.players).length < 4 && r.status === 'waiting' && r.isRanked === isRanked) {
+                foundRoom = r;
+                break;
+            }
+        }
+
+        const roomId = foundRoom ? foundRoom.roomId : randomUUID();
+        const room = foundRoom || {
+            roomId,
+            text: TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)],
+            players: {},
+            status: 'waiting',
+            isRanked,
+            lobbyEndTime: null,
+            timerId: null,
+            suddenDeathEndTime: null
+        };
+
+        if (!foundRoom) {
+            console.log(`Matchmaking: Creating new ${isRanked ? 'Ranked' : 'Casual'} room ${roomId}`);
+            gameRooms.set(roomId, room);
+            console.log(`Room ${roomId}: First player joined. Starting 10s timer.`);
+            room.lobbyEndTime = Date.now() + 10000;
+            room.timerId = setTimeout(() => startCountdown(roomId), 10000);
+        }
+
+        room.players[socket.id] = { username, progress: 0, wpm: 0, finished: false };
+        socket.join(roomId);
+        console.log(`User ${username} joined room ${roomId}`);
+
+        socket.emit('match_found', getCleanRoomState(room));
+        io.to(roomId).emit('room_state', getCleanRoomState(room));
+
+        if (Object.keys(room.players).length === 4) {
+             console.log(`Room ${roomId}: Room full. Starting countdown immediately.`);
+             if (room.timerId) clearTimeout(room.timerId);
+             startCountdown(roomId);
+        }
+    };
+
+    socket.on('join_casual', ({ username }) => joinGame(username, false));
+    socket.on('join_ranked', ({ username }) => joinGame(username, true));
+
+    // --- CUSTOM LOBBY (Private) ---
     socket.on('create_private_lobby', ({ username }) => {
         const lobby = privateLobby.createRoom({ hostUsername: username, socket });
-        socket.join(lobby.roomId); // Join the socket to the room
+        socket.join(lobby.roomId);
         socket.emit('private_lobby_created', { roomId: lobby.roomId, roomState: lobby.roomState });
     });
 
     socket.on('join_private_lobby', ({ roomId, username }) => {
         try {
-            const lobby = privateLobby.joinRoom({ roomId, username, socket });
-            socket.join(roomId); // Join the socket to the room
-            io.to(roomId).emit('lobby_state_update', { roomId, ...lobby.roomState });
+            const lobbyState = privateLobby.joinRoom({ roomId, username, socket });
+            socket.join(roomId);
+            io.to(roomId).emit('lobby_state_update', { roomId, ...lobbyState.roomState });
         } catch (error) {
-            socket.emit('lobby_error', { message: error.message || 'Lobby not found or is full.' });
+            socket.emit('lobby_error', { message: error.message });
         }
     });
 
-    socket.on('start_private_game', ({ roomId }) => {
-        const lobby = privateLobby.getLobbyByRoomId(roomId);
-        if (lobby && lobby.sockets.has(socket.id) && lobby.host === lobby.sockets.get(socket.id)) {
+    socket.on('set_private_ready', ({ roomId, username, isReady }) => {
+        try {
+            const lobbyState = privateLobby.setReady(roomId, username, isReady);
+            io.to(roomId).emit('lobby_state_update', { roomId, ...lobbyState.roomState });
+        } catch (error) {
+            console.error("Set Ready Error:", error.message);
+        }
+    });
+    
+    socket.on('start_private_game', ({ roomId, username }) => {
+        try {
+            const lobby = privateLobby.getLobbyByRoomId(roomId);
+            if (!lobby || lobby.host !== username) return;
+            // if (!privateLobby.allReady(roomId)) return; // Optional check
+
             const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
             const players = {};
-            
             lobby.players.forEach(p => {
-                players[p.socket.id] = {
-                    username: p.username,
-                    progress: 0, wpm: 0, finished: false,
-                    perk: null, perkUsedAt: 0 // Correct initialization
-                };
+                players[p.socket.id] = { username: p.username, progress: 0, wpm: 0, finished: false };
             });
 
-            const roomState = { roomId, text, players, isRanked: false };
-            gameRooms.set(roomId, roomState);
-
-            io.to(roomId).emit('match_found', { roomId, players: roomState.players, text });
-            startGameLoop(roomId);
-        }
-    });
-    
-    // --- Matchmaking Handlers ---
-    socket.on('join_casual', async ({ username }) => {
-        try {
-            let user = await User.findOne({ username });
-            if (!user) user = await User.create({ username });
-            const stats = { wpm: user.averageWPM, accuracy: user.averageAccuracy, gamesPlayed: user.gamesPlayed };
-            const skillScore = ranking.computeSkillScore(stats);
-            const result = casualMatchmaking.enqueue({ socket, username, stats, skillScore });
-            if (result.matched) {
-                const { self, opponent } = result;
-                const roomId = randomUUID();
-                const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
-                const roomState = {
-                    roomId, text, players: {
-                        [self.socket.id]: { username: self.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
-                        [opponent.socket.id]: { username: opponent.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
-                    }
-                };
-                gameRooms.set(roomId, roomState);
-                self.socket.join(roomId);
-                opponent.socket.join(roomId);
-                io.to(roomId).emit('match_found', { roomId, players: roomState.players, text });
-                startGameLoop(roomId);
-            } else {
-                socket.emit('waiting_for_match');
-            }
-        } catch (error) {
-            socket.emit('matchmaking_error', { message: 'An error occurred.' });
-        }
-    });
-
-    socket.on('join_ranked', async ({ username }) => {
-        try {
-            let user = await User.findOne({ username });
-            if (!user) user = await User.create({ username });
-            const opponent = rankedQueue.shift();
-            if (opponent) {
-                const self = { socket, username };
-                const roomId = randomUUID();
-                const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
-                const roomState = {
-                    roomId, text, isRanked: true, players: {
-                        [self.socket.id]: { username: self.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
-                        [opponent.socket.id]: { username: opponent.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
-                    }
-                };
-                gameRooms.set(roomId, roomState);
-                self.socket.join(roomId);
-                opponent.socket.join(roomId);
-                io.to(roomId).emit('match_found', { roomId, players: roomState.players, text });
-                startGameLoop(roomId);
-            } else {
-                rankedQueue.push({ socket, username });
-                socket.emit('waiting_for_match');
-            }
-        } catch (error) {
-            socket.emit('matchmaking_error', { message: 'An error occurred in ranked queue.' });
-        }
-    });
-
-    // --- In-Game Handlers ---
-    socket.on('use_perk', ({ roomId, perk }) => {
-        const room = gameRooms.get(roomId);
-        const player = room?.players[socket.id];
-        if (!player || player.perk !== perk) return;
-
-        player.perk = null;
-        player.perkUsedAt = Date.now();
-        socket.emit('perk_used');
-
-        if (perk === 'ASTEROID_ATTACK') socket.to(roomId).emit('asteroid_hit');
-        else if (perk === 'ROCKET_FUEL') {
-            const boostLength = Math.floor(room.text.length * 0.15);
-            const autoCompletedText = room.text.substring(player.progress || 0, (player.progress || 0) + boostLength);
-            socket.emit('perk_effect_rocket_fuel', { autoCompletedText });
-        } 
-        else if (perk === 'REPULSOR_WAVE') socket.to(roomId).emit('repulsor_hit');
-        else if (perk === 'NEBULA_CLOUD') socket.to(roomId).emit('nebula_hit');
-    });
-    
-        // RESTORED: endGame function
-    async function endGame(roomId) {
-        const room = gameRooms.get(roomId);
-        if (!room) return;
-        if (room.suddenDeathTimer) clearTimeout(room.suddenDeathTimer);
-
-        const finishedPlayers = Object.values(room.players).filter(p => p.finished);
-
-        // Update stats for all finished players
-        for (const player of finishedPlayers) {
-            await User.findOneAndUpdate(
-                { username: player.username },
-                { 
-                    $inc: { gamesPlayed: 1 }, 
-                    $set: { averageWPM: player.wpm, averageAccuracy: player.accuracy } 
-                },
-                { upsert: true }
-            );
-        }
-        
-        // Handle ELO calculation for ranked games
-        if (room.isRanked && finishedPlayers.length >= 2) {
-            const winner = finishedPlayers.reduce((prev, current) => ((current.wpm || 0) > (prev.wpm || 0)) ? current : prev);
-            const loser = finishedPlayers.find(p => p.username !== winner.username);
+            const room = {
+                roomId,
+                text,
+                players,
+                status: 'waiting',
+                isRanked: false,
+                isPrivate: true,
+                lobbyEndTime: null,
+                timerId: null,
+                suddenDeathEndTime: null
+            };
             
-            if (winner && loser) {
-                const winnerDoc = await User.findOne({ username: winner.username });
-                const loserDoc = await User.findOne({ username: loser.username });
+            gameRooms.set(roomId, room);
+            startCountdown(roomId);
+            io.to(roomId).emit('match_found', getCleanRoomState(room));
 
-                const newRatings = ranking.updateRatings(winnerDoc.rating, loserDoc.rating, 1);
-                
-                await User.updateOne({ _id: winnerDoc._id }, { $set: { rating: newRatings.playerA } });
-                await User.updateOne({ _id: loserDoc._id }, { $set: { rating: newRatings.playerB } });
-
-                // Attach new ratings to the payload to send to clients
-                const winnerPlayerState = Object.values(room.players).find(p => p.username === winner.username);
-                const loserPlayerState = Object.values(room.players).find(p => p.username === loser.username);
-                if (winnerPlayerState) winnerPlayerState.newRank = newRatings.playerA;
-                if (loserPlayerState) loserPlayerState.newRank = newRatings.playerB;
-            }
-        }
-        
-        io.to(roomId).emit('game_over', { players: room.players });
-        stopGameLoop(roomId);
-        setTimeout(() => gameRooms.delete(roomId), 10000); // Clean up room after a delay
-    }
-    
-    // RESTORED: player_finished handler
-    socket.on('player_finished', async ({ roomId, wpm, accuracy }) => {
-        const room = gameRooms.get(roomId);
-        if (!room || !room.players[socket.id] || room.players[socket.id].finished) return;
-
-        const playerState = room.players[socket.id];
-        playerState.finished = true;
-        playerState.wpm = wpm;
-        playerState.accuracy = accuracy;
-        
-        io.to(roomId).emit('opponent_progress', { playerId: socket.id, progress: 100, wpm: Math.round(wpm), finished: true });
-
-        const playerStates = Object.values(room.players);
-        const finishedCount = playerStates.filter(p => p.finished).length;
-        const totalPlayers = playerStates.length;
-
-        if (finishedCount === totalPlayers) {
-            if (room.suddenDeathTimer) clearTimeout(room.suddenDeathTimer);
-            await endGame(roomId);
-        } else if (finishedCount === 1 && totalPlayers > 1) {
-            const countdownDuration = 15;
-            io.to(roomId).emit('suddenDeath', { duration: countdownDuration });
-            room.suddenDeathTimer = setTimeout(() => endGame(roomId), countdownDuration * 1000);
-        } else if (totalPlayers === 1) {
-            await endGame(roomId);
+        } catch (error) {
+            console.error("Start Game Error:", error);
         }
     });
-    
+
+    socket.on('join_specific_room', ({ roomId, username }) => {
+        const room = gameRooms.get(roomId);
+        if (room) {
+            if (!room.players[socket.id]) {
+                 room.players[socket.id] = { username, progress: 0, wpm: 0, finished: false };
+                 socket.join(roomId);
+            }
+            socket.emit('room_state', getCleanRoomState(room));
+            io.to(roomId).emit('players_update', room.players);
+        } else {
+            socket.emit('error', { message: 'Room not found' });
+        }
+    });
+
+    socket.on('player_progress', ({ roomId, progress, wpm }) => {
+        const room = gameRooms.get(roomId);
+        if (!room || (room.status !== 'playing' && room.status !== 'sudden_death')) return;
+        if (!room.players[socket.id]) return;
+
+        room.players[socket.id].progress = progress;
+        room.players[socket.id].wpm = wpm;
+        io.to(roomId).emit('players_update', room.players);
+    });
+
+    socket.on('player_finished', ({ roomId, wpm }) => {
+        const room = gameRooms.get(roomId);
+        if (!room || !room.players[socket.id]) return;
+
+        room.players[socket.id].finished = true;
+        room.players[socket.id].progress = 100;
+        room.players[socket.id].wpm = wpm;
+        
+        io.to(roomId).emit('players_update', room.players);
+
+        const finishers = Object.values(room.players).filter(p => p.finished).length;
+        const total = Object.keys(room.players).length;
+
+        if (finishers === 1 && total > 1) {
+            console.log(`Room ${roomId}: Sudden Death triggered!`);
+            room.status = 'sudden_death';
+            room.suddenDeathEndTime = Date.now() + 10000;
+            if (room.timerId) clearTimeout(room.timerId);
+            
+            io.to(roomId).emit('room_state', getCleanRoomState(room));
+            room.timerId = setTimeout(() => {
+                console.log(`Room ${roomId}: Sudden Death expired.`);
+                endGame(roomId);
+            }, 10000);
+        } else if (finishers === total || total === 1) {
+            endGame(roomId);
+        }
+    });
 
     socket.on('disconnect', () => {
-        console.log('user disconnected:', socket.id);
-        casualMatchmaking.removeBySocket(socket);
-        const rankedIndex = rankedQueue.findIndex(p => p.socket.id === socket.id);
-        if (rankedIndex > -1) rankedQueue.splice(rankedIndex, 1);
-        
-        privateLobby.removePlayerBySocket(socket).forEach(lobby => {
-            if (lobby.roomState) io.to(lobby.roomId).emit('lobby_state_update', { roomId: lobby.roomId, ...lobby.roomState });
+        const updates = privateLobby.removePlayerBySocket(socket);
+        updates.forEach(({ roomId, roomState }) => {
+            if (roomState) io.to(roomId).emit('lobby_state_update', { roomId, ...roomState });
         });
+
+        const idx = rankedQueue.findIndex(p => p.socket.id === socket.id);
+        if (idx !== -1) rankedQueue.splice(idx, 1);
+
+        gameRooms.forEach((room, rId) => {
+            if (room.players[socket.id]) {
+                delete room.players[socket.id];
+                if (Object.keys(room.players).length === 0) gameRooms.delete(rId);
+                else io.to(rId).emit('players_update', room.players);
+            }
+        });
+        console.log('User disconnected:', socket.id);
     });
 });
 
-
-app.use((req, res) => {
-  res.sendFile(path.join(__dirname, '../dist/index.html'));
-});
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server listening on 0.0.0.0:${PORT}`);
-});
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server listening on 0.0.0.0:${PORT}`));

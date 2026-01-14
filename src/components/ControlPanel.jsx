@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { Zap, Rocket, Gauge, AlertTriangle, ShieldOff } from 'lucide-react';
+import { Rocket, Gauge, AlertTriangle, ShieldOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export function ControlPanel({ 
@@ -9,7 +9,7 @@ export function ControlPanel({
   progress,
   heldPerk, 
   onUsePerk,
-  disabled, // New prop for disabling input
+  disabled, 
 }) {
   const inputRef = useRef(null);
 
@@ -23,71 +23,6 @@ export function ControlPanel({
     if (onUsePerk) {
       onUsePerk(perkName);
     }
-  };
-
-  const perksConfig = {
-    'ROCKET_FUEL': {
-      name: 'ROCKET FUEL',
-      description: 'Completes 25% of the sentence',
-      Icon: Rocket,
-      color: 'orange',
-    },
-    'ASTEROID_ATTACK': {
-      name: 'ASTEROID ATTACK',
-      description: 'Disrupts your opponent',
-      Icon: AlertTriangle,
-      color: 'red',
-    },
-  };
-
-  const renderPerkSlot = () => {
-    const config = heldPerk ? perksConfig[heldPerk] : null;
-
-    if (!config) {
-      // Render a disabled "No Perk" state
-      return (
-        <div className="w-full bg-slate-800/30 border-2 border-dashed border-slate-700 rounded-lg p-3 relative h-[76px] flex items-center justify-center">
-          <div className="flex items-center gap-3 opacity-40">
-            <div className="w-8 h-8 bg-slate-700/50 rounded flex items-center justify-center flex-shrink-0">
-              <ShieldOff className="w-4 h-4 text-slate-500" />
-            </div>
-            <div className="text-left flex-1">
-              <div className="text-slate-400 text-xs">NO PERK</div>
-              <div className="text-slate-500 text-[10px]">Keep typing to earn one!</div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    
-    // Render the active perk button
-    const color = config.color;
-    return (
-      <motion.button
-        onClick={() => handleActivatePerk(heldPerk)}
-        className={`w-full bg-gradient-to-br from-${color}-900/50 to-${color}-950/50 border-2 border-${color}-700 rounded-lg p-3 transition-all group relative overflow-hidden hover:border-${color}-500 h-[76px]`}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-      >
-        <div className={`absolute inset-0 bg-${color}-500/10 opacity-0 group-hover:opacity-100 transition-opacity`} />
-        <div className='relative flex items-center gap-3'>
-          <div className={`w-8 h-8 bg-${color}-500/20 rounded flex items-center justify-center flex-shrink-0`}>
-            <config.Icon className={`w-4 h-4 text-${color}-400`} />
-          </div>
-          <div className='text-left flex-1'>
-            <div className={`text-${color}-300 text-xs`}>{config.name}</div>
-            <div className='text-slate-500 text-[10px]'>{config.description}</div>
-          </div>
-        </div>
-        {/* Activation lights */}
-        <div className='absolute top-2 right-2 flex gap-1'>
-          <div className={`w-1.5 h-1.5 rounded-full bg-${color}-400 animate-pulse`} />
-        </div>
-        <div className="absolute bottom-2 right-2 text-xs text-slate-500">
-            Press <span className="font-mono bg-slate-900 px-1 rounded">`</span> to use
-        </div>
-      </motion.button>
-    );
   };
 
   return (
@@ -107,10 +42,17 @@ export function ControlPanel({
 
       <div className='p-6'>
         <div className='grid grid-cols-12 gap-4'>
-          {/* Left Side - Power-ups */}
-          <div className='col-span-3 space-y-3'>
+          {/* Left Side - Power-ups (Disabled/Hidden for now) */}
+          <div className='col-span-3 space-y-3 opacity-50'>
             <div className='text-slate-400 text-[10px] tracking-widest mb-2'>PERK SLOT</div>
-            {renderPerkSlot()}
+             <div className="w-full bg-slate-800/30 border-2 border-dashed border-slate-700 rounded-lg p-3 relative h-[76px] flex items-center justify-center">
+                <div className="flex items-center gap-3 opacity-40">
+                    <ShieldOff className="w-4 h-4 text-slate-500" />
+                    <div className="text-left flex-1">
+                    <div className="text-slate-400 text-xs">NO PERK</div>
+                    </div>
+                </div>
+            </div>
           </div>
 
           {/* Center - Main Display */}
@@ -146,12 +88,14 @@ export function ControlPanel({
               <input
                 ref={inputRef}
                 type='text'
+                name="gameInput"
+                id="gameInput"
                 value={inputValue}
                 onChange={onInputChange}
                 placeholder='► TYPE HERE TO LAUNCH...'
                 className='w-full bg-slate-950 border-2 border-slate-700 rounded-lg px-4 py-3 text-green-400 placeholder-slate-600 focus:outline-none focus:border-green-500 transition-colors tracking-widest'
                 autoComplete="off"
-                disabled={disabled} // Apply the disabled prop here
+                disabled={disabled} 
               />
             </div>
           </div>

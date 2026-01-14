@@ -1,57 +1,67 @@
-import { motion } from 'framer-motion';
-import { Rocket } from './Rocket.jsx'; // FIXED: Added .jsx extension explicitly
+import { Rocket } from './Rocket.jsx';
 
 const ROCKET_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#eab308'];
 
 export function RocketDisplay({ players }) {
+  // Defensive check
+  if (!players) return null;
+
+  // Convert map to array with ID, then SORT by ID/Username to ensure stable lanes
+  const playerList = Object.entries(players)
+    .map(([id, p]) => ({ ...p, id }))
+    .sort((a, b) => {
+        const nameCompare = (a.username || '').localeCompare(b.username || '');
+        if (nameCompare !== 0) return nameCompare;
+        return a.id.localeCompare(b.id);
+    });
+
   return (
     <div className='relative bg-red-600 p-6 overflow-hidden rounded-t-xl border-x border-t border-slate-700 flex flex-col'>
       {/* Background */}
       <div className='absolute inset-0 overflow-hidden'>
         <div className='absolute inset-0 bg-gradient-to-b from-indigo-950 via-purple-950 to-slate-950' />
-        <div className='absolute top-10 right-20 w-32 h-32 bg-purple-500/20 rounded-full blur-3xl' />
-        <div className='absolute bottom-20 left-10 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl' />
       </div>
 
-      {/* Grid for Rockets */}
+      {/* Grid for Rockets (Fixed 4 lanes) */}
       <div className='relative grid grid-cols-4 gap-6 h-[60vh] min-h-[500px] flex-1'>
-        {[...Array(4)].map((_, i) => {
-          // Convert players map to array to ensure we capture all connected users
-          const playerList = players ? Object.values(players) : [];
+        {[0, 1, 2, 3].map((i) => {
           const player = playerList[i];
-          
-          // Use 0 progress if player doesn't exist
-          const progress = player ? player.progress : 0;
-          
-          // Ghost mode if player doesn't exist
-          const isGhost = !player;
+          const progress = player ? Number(player.progress) : 0;
 
           return (
-            <div key={i} className={`relative h-full flex flex-col items-center ${isGhost ? 'opacity-30' : ''}`}>
-              <div className='absolute top-0 w-full h-1 bg-yellow-400 rounded-full mb-4 shadow-lg shadow-yellow-400/50' />
+            <div key={i} className={`relative h-full flex flex-col items-center ${!player ? 'opacity-30' : ''}`}>
+               {/* Lane Marker */}
+              <div className='absolute top-0 w-full h-1 bg-yellow-400 rounded-full mb-4 opacity-50' />
               
-              <div className='text-white text-sm mb-2 mt-2 tracking-wide font-mono'>
-                {/* CRITICAL FIX: Check if player exists before reading name */}
-                {player ? (player.name || player.username || `Player ${i + 1}`) : `Player ${i+1}`}
+              <div className='text-white text-sm mb-2 mt-2 font-mono'>
+                {player ? (player.username || "Player") : `Slot ${i+1}`}
               </div>
 
               <div className='relative flex-1 w-full flex justify-center'>
-                <motion.div
+                {/* Rocket Container with Transition */}
+                <div
                   className='absolute'
-                  initial={{ bottom: '0%' }}
-                  animate={{ bottom: `${progress}%` }}
-                  transition={{ duration: 0.2, ease: 'linear' }}
+                  style={{ 
+                      bottom: `${progress}%`,
+                      transition: 'bottom 0.2s ease-out' 
+                  }}
                 >
+                    {/* Debug Label */}
+                    {player && (
+                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-white bg-black/50 px-1 rounded">
+                            {progress.toFixed(0)}%
+                        </div>
+                    )}
                   <Rocket color={ROCKET_COLORS[i]} />
-                </motion.div>
-
-                <div className='absolute bottom-0 w-32 h-2 bg-gray-600 rounded-full shadow-lg' />
+                </div>
+                
+                {/* Launch Pad */}
+                <div className='absolute bottom-0 w-32 h-2 bg-gray-600 rounded-full' />
               </div>
             </div>
           );
         })}
       </div>
-      <div className='absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-slate-700 to-transparent' />
     </div>
   );
 }

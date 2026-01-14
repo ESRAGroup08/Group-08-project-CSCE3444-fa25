@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
 
-// MERGED: Kept teammate's dynamic server URL logic
+// Use current window origin for socket connection
 const getServerURL = () => {
-  if (process.env.NODE_ENV === 'production') {
-    return 'https://group-08-project-csce3444-fa25.onrender.com';
+  // If we are in the browser, using "" or window.location.origin 
+  // ensures we connect to the server that served the page.
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
   }
   return 'http://localhost:3000';
 };

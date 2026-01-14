@@ -40,13 +40,22 @@ const Game = () => {
 
     const handleState = (data) => {
         if(!data) return;
+        
+        // Sync Clocks: Calculate duration based on server's time vs server's deadline
+        // Then apply that duration to client's current time.
+        const lobbyRemaining = data.lobbyEndTime ? (data.lobbyEndTime - data.serverTime) : null;
+        const localLobbyEndTime = lobbyRemaining !== null ? Date.now() + lobbyRemaining : null;
+
+        const suddenRemaining = data.suddenDeathEndTime ? (data.suddenDeathEndTime - data.serverTime) : null;
+        const localSuddenDeathEndTime = suddenRemaining !== null ? Date.now() + suddenRemaining : null;
+
         setGameState(prev => ({
             ...prev,
             text: data.text,
             players: data.players,
             status: data.status,
-            lobbyEndTime: data.lobbyEndTime,
-            suddenDeathEndTime: data.suddenDeathEndTime
+            lobbyEndTime: localLobbyEndTime,
+            suddenDeathEndTime: localSuddenDeathEndTime
         }));
         if (data.status === 'playing' && !startTime) setStartTime(Date.now());
     };

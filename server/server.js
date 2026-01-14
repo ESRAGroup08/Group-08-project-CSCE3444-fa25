@@ -57,7 +57,8 @@ function getCleanRoomState(room) {
         status: room.status,
         lobbyEndTime: room.lobbyEndTime,
         suddenDeathEndTime: room.suddenDeathEndTime,
-        isRanked: room.isRanked
+        isRanked: room.isRanked,
+        serverTime: Date.now() // Send server's current time for clock sync
     };
 }
 

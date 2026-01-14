@@ -7,6 +7,8 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const { randomUUID } = require('crypto');
 
+const casualMatchmaking = require('./casualMatchmaking');
+const ranking = require('./ranking');
 const privateLobby = require('./privateLobby');
 const User = require('./models/User');
 
@@ -38,6 +40,222 @@ mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://game_user:testuser123@g
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
+
+// --- Daily Challenges Definitions ---
+const CHALLENGES = {
+  'SPEED_DEMON': { id: 'SPEED_DEMON', description: 'Reach 80 WPM in a single game', reward: 25, target: 80, type: 'wpm' },
+  'ACCURACY_MASTER': { id: 'ACCURACY_MASTER', description: 'Achieve 98% accuracy in a game', reward: 30, target: 98, type: 'accuracy' },
+  'VICTORY_STREAK': { id: 'VICTORY_STREAK', description: 'Win 2 games in a row', reward: 50, target: 2, type: 'win_streak' },
+  'PLAY_THREE': { id: 'PLAY_THREE', description: 'Play 3 games (win or lose)', reward: 15, target: 3, type: 'play_games' }
+};
+
+// --- Daily Challenge Helper Functions ---
+async function checkAndResetChallenges(user) {
+    const now = new Date();
+    const lastReset = new Date(user.challengesLastReset);
+    const isNewDay = now.setHours(0,0,0,0) > lastReset.setHours(0,0,0,0);
+
+    if (isNewDay) {
+        user.dailyChallenges = Object.values(CHALLENGES).map(c => ({
+            challengeId: c.id,
+            description: c.description,
+            reward: c.reward,
+            progress: 0,
+            target: c.target,
+            completed: false
+        }));
+        user.challengesLastReset = new Date();
+        await user.save();
+        console.log(`Reset daily challenges for ${user.username}`);
+    }
+    return user;
+}
+
+/* --- USER & PROFILE API ROUTES --- */
+app.post('/api/login', async (req, res) => {
+  const { username } = req.body;
+  if (!username) return res.status(400).json({ message: "Username is required." });
+  try {
+    await User.findOneAndUpdate({ username }, { $setOnInsert: { username } }, { upsert: true, new: true });
+    res.status(200).json({ message: "Logged in successfully", user: { username } });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error during login.' });
+  }
+});
+
+app.get('/api/auth/status', async (req, res) => {
+    const username = req.headers['x-username'];
+    if (!username) return res.json({ isAuthenticated: false, user: null });
+    try {
+        const user = await User.findOne({ username });
+        res.json({ isAuthenticated: !!user, user: user ? { username: user.username } : null });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error during auth check.' });
+    }
+});
+
+app.get('/api/users/:username', async (req, res) => {
+    try {
+        const user = await User.findOne({ username: req.params.username });
+        if (!user) return res.status(404).json({ message: 'User not found.' });
+        res.json({
+            username: user.username,
+            gamesPlayed: user.gamesPlayed,
+            averageWPM: user.averageWPM,
+            averageAccuracy: user.averageAccuracy,
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error while fetching user data.' });
+    }
+});
+
+app.put('/api/users/:username', async (req, res) => {
+    try {
+        if (req.params.username !== req.headers['x-username']) return res.status(403).json({ message: 'Forbidden' });
+        const { newUsername } = req.body;
+        if (!newUsername || newUsername.trim().length === 0) return res.status(400).json({ message: 'New username cannot be empty.' });
+        if (await User.findOne({ username: newUsername })) return res.status(409).json({ message: 'This username is already taken.' });
+        const user = await User.findOneAndUpdate({ username: req.params.username }, { $set: { username: newUsername } }, { new: true });
+        if (!user) return res.status(404).json({ message: 'User not found.' });
+        res.json({ message: 'Username updated successfully!', username: user.username });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error while updating username.' });
+    }
+});
+
+/* --- FRIENDS API ROUTES --- */
+app.get('/api/users/search', async (req, res) => {
+    const { query } = req.query;
+    if (!query) return res.status(400).json({ message: 'Search query is required.' });
+    try {
+        const users = await User.find({ username: { $regex: query, $options: 'i' } }).limit(10);
+        res.json(users.map(u => ({ _id: u._id, username: u.username })));
+    } catch (error) {
+        res.status(500).json({ message: 'Server error while searching for users.' });
+    }
+});
+
+app.get('/api/friends', async (req, res) => {
+    const username = req.headers['x-username'];
+    if (!username) return res.status(401).json({ message: 'Unauthorized' });
+    try {
+        const user = await User.findOne({ username })
+            .populate('friends', 'username')
+            .populate('friendRequestsSent', 'username')
+            .populate('friendRequestsReceived', 'username');
+        if (!user) return res.status(404).json({ message: 'User not found' });
+        res.json({
+            friends: user.friends,
+            sentRequests: user.friendRequestsSent,
+            receivedRequests: user.friendRequestsReceived,
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error while fetching friends data.' });
+    }
+});
+
+app.post('/api/friend-request/send', async (req, res) => {
+    const senderUsername = req.headers['x-username'];
+    const { recipientId } = req.body;
+    try {
+        const sender = await User.findOne({ username: senderUsername });
+        const recipient = await User.findById(recipientId);
+        if (!sender || !recipient) return res.status(404).json({ message: 'User not found.' });
+        if (sender._id.equals(recipient._id)) return res.status(400).json({ message: 'You cannot add yourself.' });
+
+        await User.findByIdAndUpdate(sender._id, { $addToSet: { friendRequestsSent: recipient._id } });
+        await User.findByIdAndUpdate(recipient._id, { $addToSet: { friendRequestsReceived: sender._id } });
+        res.status(200).json({ message: 'Friend request sent.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error sending request.' });
+    }
+});
+
+app.post('/api/friend-request/accept', async (req, res) => {
+    const acceptorUsername = req.headers['x-username'];
+    const { senderId } = req.body;
+    try {
+        const acceptor = await User.findOne({ username: acceptorUsername });
+        const sender = await User.findById(senderId);
+        if (!acceptor || !sender) return res.status(404).json({ message: 'User not found.' });
+
+        await User.findByIdAndUpdate(acceptor._id, {
+            $addToSet: { friends: sender._id },
+            $pull: { friendRequestsReceived: sender._id }
+        });
+        await User.findByIdAndUpdate(sender._id, {
+            $addToSet: { friends: acceptor._id },
+            $pull: { friendRequestsSent: acceptor._id }
+        });
+        res.status(200).json({ message: 'Friend request accepted.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error accepting request.' });
+    }
+});
+
+app.post('/api/friend-request/reject', async (req, res) => {
+    const currentUserUsername = req.headers['x-username'];
+    const { otherUserId } = req.body;
+    try {
+        const currentUser = await User.findOne({ username: currentUserUsername });
+        const otherUser = await User.findById(otherUserId);
+        if (!currentUser || !otherUser) return res.status(404).json({ message: 'User not found.' });
+
+        await User.findByIdAndUpdate(currentUser._id, { $pull: { friendRequestsReceived: otherUser._id, friendRequestsSent: otherUser._id } });
+        await User.findByIdAndUpdate(otherUser._id, { $pull: { friendRequestsSent: currentUser._id, friendRequestsReceived: currentUser._id } });
+        res.status(200).json({ message: 'Request rejected or cancelled.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error rejecting request.' });
+    }
+});
+
+app.post('/api/friend/remove', async (req, res) => {
+    const currentUserUsername = req.headers['x-username'];
+    const { friendIdToRemove } = req.body;
+    try {
+        const currentUser = await User.findOne({ username: currentUserUsername });
+        await User.findByIdAndUpdate(currentUser._id, { $pull: { friends: friendIdToRemove } });
+        await User.findByIdAndUpdate(friendIdToRemove, { $pull: { friends: currentUser._id } });
+        res.status(200).json({ message: 'Friend removed.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error removing friend.' });
+    }
+});
+
+app.get('/api/leaderboard', async (req, res) => {
+    try {
+        const topPlayers = await User.find({})
+            .sort({ rating: -1 }) // Sort by rating, highest first
+            .limit(25)            // Limit to top 25
+            .select('username rating gamesPlayed'); // Select only needed fields
+
+        res.json(topPlayers);
+    } catch (error) {
+        console.error('Error fetching leaderboard data:', error);
+        res.status(500).json({ message: 'Server error while fetching leaderboard.' });
+    }
+});
+
+// NEW: API Endpoint for Daily Challenges
+app.get('/api/challenges', async (req, res) => {
+    const username = req.headers['x-username'];
+    if (!username) return res.status(401).json({ message: 'Unauthorized' });
+
+    try {
+        let user = await User.findOne({ username });
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        user = await checkAndResetChallenges(user);
+
+        res.json({
+            dailyChallenges: user.dailyChallenges,
+            challengesLastReset: user.challengesLastReset
+        });
+    } catch (error) {
+        console.error("Error fetching challenges:", error);
+        res.status(500).json({ message: 'Server error fetching challenges.' });
+    }
+});
 
 const gameRooms = new Map();
 const rankedQueue = [];

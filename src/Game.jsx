@@ -41,23 +41,24 @@ const Game = () => {
     const handleState = (data) => {
         if(!data) return;
         
-        // Sync Clocks: Calculate duration based on server's time vs server's deadline
-        // Then apply that duration to client's current time.
-        const lobbyRemaining = data.lobbyEndTime ? (data.lobbyEndTime - data.serverTime) : null;
-        const localLobbyEndTime = lobbyRemaining !== null ? Date.now() + lobbyRemaining : null;
-
-        const suddenRemaining = data.suddenDeathEndTime ? (data.suddenDeathEndTime - data.serverTime) : null;
-        const localSuddenDeathEndTime = suddenRemaining !== null ? Date.now() + suddenRemaining : null;
+        // Calculate local target end time based on relative time from server
+        let localEndTime = null;
+        if (data.status === 'waiting' && data.waitingTimeLeft !== null) {
+            localEndTime = Date.now() + data.waitingTimeLeft;
+        } else if (data.status === 'countdown' && data.countdownTimeLeft !== null) {
+            localEndTime = Date.now() + data.countdownTimeLeft;
+        } else if (data.status === 'sudden_death' && data.suddenDeathTimeLeft !== null) {
+            localEndTime = Date.now() + data.suddenDeathTimeLeft;
+        }
 
         setGameState(prev => ({
             ...prev,
-            text: data.text,
-            players: data.players,
-            status: data.status,
-            lobbyEndTime: localLobbyEndTime,
-            suddenDeathEndTime: localSuddenDeathEndTime
+            ...data,
+            endTime: localEndTime // Use localized end time for timers
         }));
+
         if (data.status === 'playing' && !startTime) setStartTime(Date.now());
+        if (data.status === 'finished') setIsGameOver(true);
     };
 
     socket.on('room_state', handleState);
@@ -70,7 +71,7 @@ const Game = () => {
     socket.on('match_found', handleState);
 
     return () => {
-        socket.off('room_state', handleState);
+        socket.off('room_state');
         socket.off('players_update');
         socket.off('game_over');
         socket.off('match_found');
@@ -78,16 +79,13 @@ const Game = () => {
   }, [socket, roomId]);
 
   useEffect(() => {
-      const targetTime = gameState.status === 'waiting' ? gameState.lobbyEndTime : 
-                         (gameState.status === 'countdown' ? gameState.lobbyEndTime : 
-                         (gameState.status === 'sudden_death' ? gameState.suddenDeathEndTime : null));
-      if (!targetTime) { setTimeLeft(null); return; }
+      if (!gameState.endTime) { setTimeLeft(null); return; }
       const interval = setInterval(() => {
-          const diff = Math.ceil((targetTime - Date.now()) / 1000);
+          const diff = Math.ceil((gameState.endTime - Date.now()) / 1000);
           setTimeLeft(diff > 0 ? diff : 0);
       }, 100);
       return () => clearInterval(interval);
-  }, [gameState.status, gameState.lobbyEndTime, gameState.suddenDeathEndTime]);
+  }, [gameState.status, gameState.endTime]);
 
   const handleInputChange = (e) => {
       if (gameState.status !== 'playing' && gameState.status !== 'sudden_death') return;
@@ -121,7 +119,7 @@ const Game = () => {
     <div className="w-full min-h-screen bg-gray-900 flex flex-col relative w-full max-w-[95%] mx-auto py-8">
         {showResults && <ResultsModal players={gameState.players} myPlayerId={myPlayerId} playerResult={playerResult} isGameOver={isGameOver} />}
         {gameState.status === 'loading' && <Overlay title="Loading..." />}
-        {gameState.status === 'waiting' && <Overlay title="Waiting..." subtext={`(${Object.keys(gameState.players || {}).length}/4)`} showTimer={!!gameState.lobbyEndTime} time={timeLeft} />}
+        {gameState.status === 'waiting' && <Overlay title="Waiting..." subtext={`(${Object.keys(gameState.players).length}/4)`} showTimer={!!gameState.endTime} time={timeLeft} />}
         {gameState.status === 'countdown' && <Overlay title={timeLeft} bigText={true} />}
         {gameState.status === 'sudden_death' && !myPlayer?.finished && <SuddenDeathOverlay time={timeLeft} />}
         <div className="flex-1 flex flex-col justify-center">

@@ -50,15 +50,17 @@ const TEXT_SNIPPETS = [
 // --- Helper Functions ---
 function getCleanRoomState(room) {
     if (!room) return null;
+    const now = Date.now();
     return {
         roomId: room.roomId,
         players: room.players,
         text: room.text,
         status: room.status,
-        lobbyEndTime: room.lobbyEndTime,
-        suddenDeathEndTime: room.suddenDeathEndTime,
         isRanked: room.isRanked,
-        serverTime: Date.now() // Send server's current time for clock sync
+        // Send specific durations remaining for each phase
+        waitingTimeLeft: room.waitingEndTime ? Math.max(0, room.waitingEndTime - now) : null,
+        countdownTimeLeft: room.countdownEndTime ? Math.max(0, room.countdownEndTime - now) : null,
+        suddenDeathTimeLeft: room.suddenDeathEndTime ? Math.max(0, room.suddenDeathEndTime - now) : null
     };
 }
 
@@ -71,7 +73,7 @@ function endGame(roomId) {
     
     room.status = 'finished';
 
-    // Find winner by progress (if multiple at 100%, first finished is winner)
+    // Find winner by progress
     const playersArr = Object.entries(room.players).map(([id, p]) => ({ ...p, id }));
     const winner = playersArr.sort((a, b) => {
         if (a.finished && !b.finished) return -1;
@@ -91,18 +93,16 @@ function startCountdown(roomId) {
     const room = gameRooms.get(roomId);
     if (!room) return;
     
-    console.log(`Room ${roomId}: Starting countdown.`);
+    console.log(`Room ${roomId}: Starting 3s countdown.`);
     room.status = 'countdown';
-    room.lobbyEndTime = Date.now() + 3000;
+    room.countdownEndTime = Date.now() + 3000;
     
     io.to(roomId).emit('room_state', getCleanRoomState(room));
 
     setTimeout(() => {
         const r = gameRooms.get(roomId);
         if (!r) return;
-        console.log(`Room ${roomId}: Game Started!`);
         r.status = 'playing';
-        r.lobbyEndTime = null;
         io.to(roomId).emit('room_state', getCleanRoomState(r));
     }, 3000);
 }
@@ -126,28 +126,25 @@ io.on('connection', (socket) => {
             players: {},
             status: 'waiting',
             isRanked,
-            lobbyEndTime: null,
-            timerId: null,
-            suddenDeathEndTime: null
+            waitingEndTime: null,
+            countdownEndTime: null,
+            suddenDeathEndTime: null,
+            timerId: null
         };
 
         if (!foundRoom) {
-            console.log(`Matchmaking: Creating new ${isRanked ? 'Ranked' : 'Casual'} room ${roomId}`);
             gameRooms.set(roomId, room);
-            console.log(`Room ${roomId}: First player joined. Starting 10s timer.`);
-            room.lobbyEndTime = Date.now() + 10000;
+            room.waitingEndTime = Date.now() + 10000;
             room.timerId = setTimeout(() => startCountdown(roomId), 10000);
         }
 
         room.players[socket.id] = { username, progress: 0, wpm: 0, finished: false };
         socket.join(roomId);
-        console.log(`User ${username} joined room ${roomId}`);
 
         socket.emit('match_found', getCleanRoomState(room));
         io.to(roomId).emit('room_state', getCleanRoomState(room));
 
         if (Object.keys(room.players).length === 4) {
-             console.log(`Room ${roomId}: Room full. Starting countdown immediately.`);
              if (room.timerId) clearTimeout(room.timerId);
              startCountdown(roomId);
         }

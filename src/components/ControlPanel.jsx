@@ -7,8 +7,9 @@ export function ControlPanel({
   inputValue, 
   onInputChange, 
   progress,
-  heldPerk, 
-  onUsePerk,
+  selectedPerk, 
+  onActivatePerk,
+  perkUsed,
   disabled, 
 }) {
   const inputRef = useRef(null);
@@ -18,12 +19,6 @@ export function ControlPanel({
       inputRef.current?.focus();
     }
   }, [disabled]);
-
-  const handleActivatePerk = (perkName) => {
-    if (onUsePerk) {
-      onUsePerk(perkName);
-    }
-  };
 
   return (
     <div className='relative bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-hidden'>
@@ -42,17 +37,38 @@ export function ControlPanel({
 
       <div className='p-6'>
         <div className='grid grid-cols-12 gap-4'>
-          {/* Left Side - Power-ups (Disabled/Hidden for now) */}
-          <div className='col-span-3 space-y-3 opacity-50'>
+          {/* Left Side - Power-ups */}
+          <div className='col-span-3 space-y-3'>
             <div className='text-slate-400 text-[10px] tracking-widest mb-2'>PERK SLOT</div>
-             <div className="w-full bg-slate-800/30 border-2 border-dashed border-slate-700 rounded-lg p-3 relative h-[76px] flex items-center justify-center">
+            <div className={`w-full bg-slate-800/30 border-2 ${perkUsed ? 'border-red-500' : 'border-slate-700'} rounded-lg p-3 relative h-[76px] flex items-center justify-center`}>
+              {selectedPerk ? (
+                <div className="flex items-center gap-3">
+                  <ShieldOff className="w-4 h-4 text-green-400" />
+                  <div className="text-left flex-1">
+                    <div className="text-green-400 text-xs">{selectedPerk.name}</div>
+                    <button 
+                      onClick={onActivatePerk} 
+                      disabled={perkUsed || disabled}
+                      className="text-xs text-blue-400 hover:text-blue-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                    >
+                      {perkUsed ? 'USED' : 'ACTIVATE'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
                 <div className="flex items-center gap-3 opacity-40">
                     <ShieldOff className="w-4 h-4 text-slate-500" />
                     <div className="text-left flex-1">
                     <div className="text-slate-400 text-xs">NO PERK</div>
                     </div>
                 </div>
+              )}
             </div>
+            {selectedPerk && !perkUsed && (
+              <div className="text-center text-slate-400 text-xs">
+                Press ` to activate
+              </div>
+            )}
           </div>
 
           {/* Center - Main Display */}

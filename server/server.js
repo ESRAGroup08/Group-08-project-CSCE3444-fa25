@@ -260,9 +260,15 @@ app.get('/api/challenges', async (req, res) => {
 const gameRooms = new Map();
 const rankedQueue = [];
 const TEXT_SNIPPETS = [
-    'The cosmos is vast and full of wonders, from shimmering nebulas to swirling galaxies.',
-    'A lone spaceship drifted through the asteroid field, its pilot expertly dodging the floating rocks.',
-    'Quantum mechanics is the theoretical basis of modern physics that explains the nature and behavior of matter and energy on the atomic and subatomic level.',
+    "The diplomatic envoy from the Zorgon Hegemony arrived in a ship that looked more like a work of art than a vessel of war. Its hull shimmered with organic bioluminescence, pulsing in rhythm with their language. We stood ready at the airlock, hoping that this meeting would end the century-long conflict between our systems.",
+    "Solar flares can disrupt shielding and fry sensitive electronics in an instant. The captain ordered all non-essential systems powered down as the wave of charged particles washed over the ship. Sparks flew from the control panels, and the artificial gravity fluctuated wildly, sending tools and coffee cups floating through the bridge.",
+    "Exploring the oceanic moon of Enceladus required a specialized submersible capable of withstanding crushing pressure. We descended through the cracks in the ice shell, entering a dark, subterranean ocean heated by hydrothermal vents. There, in the eternal gloom, we found life forms that defied all biological classification.",
+    "The nebula was a dense cloud of ionized gas and dust, blocking our long-range sensors. Flying through it was like navigating a thick fog, forcing us to rely on visual piloting. Lightning arc'd between the gas clouds, illuminating the silhouette of a massive structure hiding deep within the stellar nursery.",
+    "Warp drive instability is the nightmare of every starship engineer. The containment field fluctuated dangerously, threatening to collapse the antimatter bubble. Sweat dripped down the chief engineer's face as she manually recalibrated the magnetic injectors, praying that the containment field would hold for just a few more minutes.",
+    "The ancient ruins on Proxima B were built by a civilization that vanished long before humanity discovered fire. Towering monoliths of black stone hummed with a low resonance, reacting to our presence. We touched the glyphs carved into the surface, and suddenly, the entire city began to light up.",
+    "Space debris is a growing problem in the orbital lanes of industrialized planets. A paint fleck traveling at orbital velocity hits with the force of a bullet. Our cleanup crews use magnetic nets and laser ablation to clear the path for civilian transports, a thankless but vital job for keeping the trade routes open.",
+    "The holographic AI flickered as it processed the complex calculations for the jump coordinates. 'Probability of survival is approximately 72 percent,' it stated in a calm, synthetic voice. The captain grinned and pushed the throttle forward, betting everything on that 72 percent chance to escape the pursuing cruiser.",
+    "Living in zero gravity changes the human body in strange ways. Bones lose density and muscles atrophy without strict exercise regimens. Yet, floating freely through the corridors of the station brings a sense of freedom that surface-dwellers will never understand, a permanent detachment from the weight of the world."
 ];
 
 // --- Helper Functions ---
@@ -356,7 +362,7 @@ io.on('connection', (socket) => {
             room.timerId = setTimeout(() => startCountdown(roomId), 10000);
         }
 
-        room.players[socket.id] = { username, progress: 0, wpm: 0, finished: false };
+        room.players[socket.id] = { username, progress: 0, typedLength: 0, progressModifier: 0, wpm: 0, finished: false, perk: null, perkUsed: false };
         socket.join(roomId);
 
         socket.emit('match_found', getCleanRoomState(room));
@@ -406,7 +412,7 @@ io.on('connection', (socket) => {
             const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
             const players = {};
             lobby.players.forEach(p => {
-                players[p.socket.id] = { username: p.username, progress: 0, wpm: 0, finished: false };
+                players[p.socket.id] = { username: p.username, progress: 0, typedLength: 0, progressModifier: 0, wpm: 0, finished: false, perk: null, perkUsed: false };
             });
 
             const room = {
@@ -422,7 +428,7 @@ io.on('connection', (socket) => {
             };
             
             gameRooms.set(roomId, room);
-            startCountdown(roomId);
+            // startCountdown(roomId); // REMOVED: Wait for players to select perks
             io.to(roomId).emit('match_found', getCleanRoomState(room));
 
         } catch (error) {
@@ -434,7 +440,7 @@ io.on('connection', (socket) => {
         const room = gameRooms.get(roomId);
         if (room) {
             if (!room.players[socket.id]) {
-                 room.players[socket.id] = { username, progress: 0, wpm: 0, finished: false };
+                 room.players[socket.id] = { username, progress: 0, typedLength: 0, progressModifier: 0, wpm: 0, finished: false, perk: null, perkUsed: false };
                  socket.join(roomId);
             }
             socket.emit('room_state', getCleanRoomState(room));
@@ -444,13 +450,67 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('player_progress', ({ roomId, progress, wpm }) => {
+    socket.on('player_ready', ({ roomId, perk }) => {
         const room = gameRooms.get(roomId);
-        if (!room || (room.status !== 'playing' && room.status !== 'sudden_death')) return;
+        if (room && room.players[socket.id]) {
+            room.players[socket.id].perk = perk;
+        }
+
+        if (room.isPrivate) {
+            const allPlayersReady = Object.values(room.players).every(p => p.perk);
+            if (allPlayersReady) {
+                startCountdown(roomId);
+            }
+        }
+    });
+
+    socket.on('activate_perk', ({ roomId, perkName }) => {
+        const room = gameRooms.get(roomId);
+        if (!room || !room.players[socket.id] || room.players[socket.id].perkUsed) return;
+
+        room.players[socket.id].perkUsed = true;
+        const opponents = Object.keys(room.players).filter(id => id !== socket.id);
+        const randomOpponentId = opponents[Math.floor(Math.random() * opponents.length)];
+        // const textLen = room.text.length; // Unused now
+
+        switch (perkName) {
+            case 'Solar Flare':
+                if (randomOpponentId) {
+                    io.to(roomId).emit('perk_effect', { perkName, targetPlayerId: randomOpponentId });
+                }
+                break;
+            case 'Hyperdrive':
+                io.to(roomId).emit('perk_effect', { perkName, targetPlayerId: socket.id });
+                break;
+            case 'Tractor Beam':
+                if (randomOpponentId) {
+                    io.to(roomId).emit('perk_effect', { perkName, targetPlayerId: randomOpponentId });
+                }
+                break;
+            case 'System Hack':
+                if (randomOpponentId) {
+                    io.to(roomId).emit('perk_effect', { perkName, targetPlayerId: randomOpponentId });
+                }
+                break;
+        }
+    });
+
+    socket.on('player_progress', ({ roomId, typedLength, wpm }) => {
+        const room = gameRooms.get(roomId);
+        if (!room) return;
+        
+        // Strict status check to prevent premature playing
+        if (room.status !== 'playing' && room.status !== 'sudden_death') return;
+        
         if (!room.players[socket.id]) return;
 
-        room.players[socket.id].progress = progress;
-        room.players[socket.id].wpm = wpm;
+        const p = room.players[socket.id];
+        p.typedLength = typedLength || 0;
+        p.wpm = wpm;
+        
+        const textLen = room.text.length;
+        p.progress = Math.min(100, Math.max(0, (p.typedLength / textLen * 100) + p.progressModifier));
+        
         io.to(roomId).emit('players_update', room.players);
     });
 

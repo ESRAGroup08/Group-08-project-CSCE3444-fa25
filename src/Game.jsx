@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useParams, useOutletContext } from 'react-router-dom';
 import { ControlPanel } from './components/ControlPanel';
 import { RocketDisplay } from './components/RocketDisplay';
 import ResultsModal from './components/ResultsModal';
+import Perks from './components/Perks';
 
 const Overlay = ({ title, subtext, showTimer, time, bigText }) => (
     <div className="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center text-white">
@@ -31,6 +32,13 @@ const Game = () => {
   const [startTime, setStartTime] = useState(null);
   const [isGameOver, setIsGameOver] = useState(false);
   const [playerResult, setPlayerResult] = useState(null);
+  const [selectedPerk, setSelectedPerk] = useState(null);
+  const [perkUsed, setPerkUsed] = useState(false);
+  const [isBlinded, setIsBlinded] = useState(false);
+  const [isSystemLocked, setIsSystemLocked] = useState(false);
+  
+  const gameStateRef = useRef(gameState);
+  useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
 
   useEffect(() => {
     if (!socket || !socket.connected || !roomId) return;
@@ -41,7 +49,6 @@ const Game = () => {
     const handleState = (data) => {
         if(!data) return;
         
-        // Calculate local target end time based on relative time from server
         let localEndTime = null;
         if (data.status === 'waiting' && data.waitingTimeLeft !== null) {
             localEndTime = Date.now() + data.waitingTimeLeft;
@@ -54,11 +61,53 @@ const Game = () => {
         setGameState(prev => ({
             ...prev,
             ...data,
-            endTime: localEndTime // Use localized end time for timers
+            endTime: localEndTime
         }));
 
         if (data.status === 'playing' && !startTime) setStartTime(Date.now());
         if (data.status === 'finished') setIsGameOver(true);
+    };
+
+    const handlePerkEffect = ({ perkName, targetPlayerId }) => {
+      if (targetPlayerId === socket.id) {
+        if (perkName === 'Solar Flare') {
+          setIsBlinded(true);
+          setTimeout(() => setIsBlinded(false), 5000);
+        } else if (perkName === 'System Hack') {
+          setIsSystemLocked(true);
+          setTimeout(() => setIsSystemLocked(false), 3000);
+        } else if (perkName === 'Hyperdrive') {
+            const currentText = gameStateRef.current.text || "";
+            setInputValue(prev => {
+                const currentLen = prev.length;
+                if (currentLen >= currentText.length) return prev;
+                
+                const remainingText = currentText.slice(currentLen);
+                let nextSpaceIdx = remainingText.indexOf(' ');
+                if (nextSpaceIdx === -1) nextSpaceIdx = remainingText.length;
+                else nextSpaceIdx += 1; // Include the space
+
+                const nextWord = remainingText.slice(0, nextSpaceIdx);
+                const newVal = prev + nextWord;
+                
+                socket.emit('player_progress', { roomId, typedLength: newVal.length, wpm: 0 });
+                return newVal;
+            });
+        } else if (perkName === 'Tractor Beam') {
+            setInputValue(prev => {
+                if (prev.length === 0) return prev;
+                const trimmed = prev.trimEnd();
+                const lastSpaceIdx = trimmed.lastIndexOf(' ');
+                
+                let newVal = "";
+                if (lastSpaceIdx === -1) newVal = ""; 
+                else newVal = trimmed.slice(0, lastSpaceIdx + 1);
+                
+                socket.emit('player_progress', { roomId, typedLength: newVal.length, wpm: 0 });
+                return newVal;
+            });
+        }
+      }
     };
 
     socket.on('room_state', handleState);
@@ -69,12 +118,14 @@ const Game = () => {
         setPlayerResult(socket.id === winnerId ? 'won' : 'lost');
     });
     socket.on('match_found', handleState);
+    socket.on('perk_effect', handlePerkEffect);
 
     return () => {
         socket.off('room_state');
         socket.off('players_update');
         socket.off('game_over');
         socket.off('match_found');
+        socket.off('perk_effect');
     };
   }, [socket, roomId]);
 
@@ -87,9 +138,22 @@ const Game = () => {
       return () => clearInterval(interval);
   }, [gameState.status, gameState.endTime]);
 
+  useEffect(() => {
+      const handleKeyDown = (e) => {
+          if (e.key === '`') {
+              handleActivatePerk();
+          }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+          window.removeEventListener('keydown', handleKeyDown);
+      };
+  }, [selectedPerk, perkUsed]);
+
   const handleInputChange = (e) => {
       if (gameState.status !== 'playing' && gameState.status !== 'sudden_death') return;
-      const val = e.target.value;
+      let val = e.target.value;
+      
       if (!gameState.text || !gameState.text.startsWith(val)) return;
       setInputValue(val);
       const progress = (val.length / gameState.text.length) * 100;
@@ -98,34 +162,54 @@ const Game = () => {
           const min = (Date.now() - startTime) / 60000;
           if (min > 0) wpm = Math.round((val.length / 5) / min);
       }
-      
-      // Optimistic update
-      if (gameState.players[myPlayerId]) {
-          setGameState(prev => ({
-              ...prev,
-              players: { ...prev.players, [myPlayerId]: { ...prev.players[myPlayerId], progress, wpm } }
-          }));
-      }
 
       if (val.length === gameState.text.length) socket.emit('player_finished', { roomId, wpm });
-      else socket.emit('player_progress', { roomId, progress, wpm });
+      else socket.emit('player_progress', { roomId, typedLength: val.length, wpm });
+  };
+
+  const handlePerkSelect = (perk) => {
+    setSelectedPerk(perk);
+    socket.emit('player_ready', { roomId, perk: perk.name });
+  };
+
+  const handleActivatePerk = () => {
+    if (selectedPerk && !perkUsed) {
+      setPerkUsed(true);
+      socket.emit('activate_perk', { roomId, perkName: selectedPerk.name });
+    }
   };
 
   const myPlayer = gameState.players?.[myPlayerId];
   const myProgress = myPlayer?.progress || 0;
   const showResults = isGameOver || myPlayer?.finished;
+  const targetText = isBlinded ? gameState.text.replace(/[a-zA-Z]/g, '*') : gameState.text;
 
   return (
     <div className="w-full min-h-screen bg-gray-900 flex flex-col relative w-full max-w-[95%] mx-auto py-8">
-        {showResults && <ResultsModal players={gameState.players} myPlayerId={myPlayerId} playerResult={playerResult} isGameOver={isGameOver} />}
-        {gameState.status === 'loading' && <Overlay title="Loading..." />}
-        {gameState.status === 'waiting' && <Overlay title="Waiting..." subtext={`(${Object.keys(gameState.players).length}/4)`} showTimer={!!gameState.endTime} time={timeLeft} />}
-        {gameState.status === 'countdown' && <Overlay title={timeLeft} bigText={true} />}
-        {gameState.status === 'sudden_death' && !myPlayer?.finished && <SuddenDeathOverlay time={timeLeft} />}
-        <div className="flex-1 flex flex-col justify-center">
-            <RocketDisplay players={gameState.players} />
-            <ControlPanel targetText={gameState.text || ""} inputValue={inputValue} onInputChange={handleInputChange} progress={myProgress} disabled={gameState.status !== 'playing' && gameState.status !== 'sudden_death' || myPlayer?.finished} />
-        </div>
+        {!selectedPerk && gameState.status !== 'loading' && <Perks onSelectPerk={handlePerkSelect} />}
+        {selectedPerk && (
+            <>
+                {showResults && <ResultsModal players={gameState.players} myPlayerId={myPlayerId} playerResult={playerResult} isGameOver={isGameOver} />}
+                {gameState.status === 'loading' && <Overlay title="Loading..." />}
+                {gameState.status === 'waiting' && <Overlay title="Waiting..." subtext={`(${Object.keys(gameState.players).length}/4)`} showTimer={!!gameState.endTime} time={timeLeft} />}
+                {gameState.status === 'countdown' && <Overlay title={timeLeft} bigText={true} />}
+                {gameState.status === 'sudden_death' && !myPlayer?.finished && <SuddenDeathOverlay time={timeLeft} />}
+                {isSystemLocked && <Overlay title="SYSTEM LOCKOUT" subtext="Terminal Hacked" bigText={false} />}
+                <div className="flex-1 flex flex-col justify-center">
+                    <RocketDisplay players={gameState.players} />
+                    <ControlPanel 
+                        targetText={targetText || ""} 
+                        inputValue={inputValue} 
+                        onInputChange={handleInputChange} 
+                        progress={myProgress} 
+                        selectedPerk={selectedPerk}
+                        onActivatePerk={handleActivatePerk}
+                        perkUsed={perkUsed}
+                        disabled={gameState.status !== 'playing' && gameState.status !== 'sudden_death' || myPlayer?.finished || isSystemLocked} 
+                    />
+                </div>
+            </>
+        )}
     </div>
   );
 };

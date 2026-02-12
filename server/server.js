@@ -12,7 +12,7 @@ const ranking = require('./ranking');
 const privateLobby = require('./privateLobby');
 const User = require('./models/User');
 
-// --- Register User model for population ---
+// --- Register User model ---
 mongoose.model('User');
 
 const app = express();
@@ -37,11 +37,9 @@ mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://game_user:testuser123@g
   .then(() => console.log('MongoDB connected successfully.'))
   .catch(err => console.error('MongoDB connection error:', err));
   
-// --- Middleware ---
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
-
 
 // --- Daily Challenges Definitions ---
 const CHALLENGES = {
@@ -246,7 +244,7 @@ app.get('/api/challenges', async (req, res) => {
     try {
         let user = await User.findOne({ username });
         if (!user) return res.status(404).json({ message: 'User not found' });
-        
+
         user = await checkAndResetChallenges(user);
 
         res.json({
@@ -259,261 +257,387 @@ app.get('/api/challenges', async (req, res) => {
     }
 });
 
-
-const PORT = process.env.PORT || 3000;
-
-// --- Socket.IO Game Logic ---
+const gameRooms = new Map();
+const rankedQueue = [];
 const TEXT_SNIPPETS = [
-    'The cosmos is vast and full of wonders, from shimmering nebulas to swirling galaxies.',
-    'A lone spaceship drifted through the asteroid field, its pilot expertly dodging the floating rocks.',
-    'Quantum mechanics is the theoretical basis of modern physics that explains the nature and behavior of matter and energy on the atomic and subatomic level.',
+    "The diplomatic envoy from the Zorgon Hegemony arrived in a ship that looked more like a work of art than a vessel of war. Its hull shimmered with organic bioluminescence, pulsing in rhythm with t[...]",
+    "Solar flares can disrupt shielding and fry sensitive electronics in an instant. The captain ordered all non-essential systems powered down as the wave of charged particles washed over the ship. S[...]",
+    "Exploring the oceanic moon of Enceladus required a specialized submersible capable of withstanding crushing pressure. We descended through the cracks in the ice shell, entering a dark, subterrane[...]",
+    "The nebula was a dense cloud of ionized gas and dust, blocking our long-range sensors. Flying through it was like navigating a thick fog, forcing us to rely on visual piloting. Lightning arc'd be[...]",
+    "Warp drive instability is the nightmare of every starship engineer. The containment field fluctuated dangerously, threatening to collapse the antimatter bubble. Sweat dripped down the chief engin[...]",
+    "The ancient ruins on Proxima B were built by a civilization that vanished long before humanity discovered fire. Towering monoliths of black stone hummed with a low resonance, reacting to our pres[...]",
+    "Space debris is a growing problem in the orbital lanes of industrialized planets. A paint fleck traveling at orbital velocity hits with the force of a bullet. Our cleanup crews use magnetic nets [...]",
+    "The holographic AI flickered as it processed the complex calculations for the jump coordinates. 'Probability of survival is approximately 72 percent,' it stated in a calm, synthetic voice. The ca[...]",
+    "Living in zero gravity changes the human body in strange ways. Bones lose density and muscles atrophy without strict exercise regimens. Yet, floating freely through the corridors of the station b",
 ];
 
-const gameRooms = new Map();
-const PERKS = ['ASTEROID_ATTACK', 'ROCKET_FUEL', 'REPULSOR_WAVE', 'NEBULA_CLOUD'];
-const rankedQueue = [];
+// --- Helper Functions ---
+function getCleanRoomState(room) {
+    if (!room) return null;
+    const now = Date.now();
+    return {
+        roomId: room.roomId,
+        players: room.players,
+        text: room.text,
+        status: room.status,
+        isRanked: room.isRanked,
+        // Send specific durations remaining for each phase
+        waitingTimeLeft: room.waitingEndTime ? Math.max(0, room.waitingEndTime - now) : null,
+        countdownTimeLeft: room.countdownEndTime ? Math.max(0, room.countdownEndTime - now) : null,
+        suddenDeathTimeLeft: room.suddenDeathEndTime ? Math.max(0, room.suddenDeathEndTime - now) : null
+    };
+}
 
-function startGameLoop(roomId) {
+function endGame(roomId) {
+    const room = gameRooms.get(roomId);
+    if (!room || room.status === 'finished') return;
+
+    console.log(`Room ${roomId}: Ending game.`);
+    if (room.timerId) clearTimeout(room.timerId);
+    
+    room.status = 'finished';
+
+    // Find winner by progress
+    const playersArr = Object.entries(room.players).map(([id, p]) => ({ ...p, id }));
+    const winner = playersArr.sort((a, b) => {
+        if (a.finished && !b.finished) return -1;
+        if (!a.finished && b.finished) return 1;
+        return b.progress - a.progress;
+    })[0];
+
+    io.to(roomId).emit('game_over', { 
+        players: room.players,
+        winnerId: winner ? winner.id : null
+    });
+    
+    setTimeout(() => gameRooms.delete(roomId), 300000);
+}
+
+function startCountdown(roomId) {
     const room = gameRooms.get(roomId);
     if (!room) return;
-    const perkInterval = Math.random() * 2000 + 5000;
-    room.gameInterval = setInterval(() => {
-        const playerIds = Object.keys(room.players);
-        const now = Date.now();
-        const cooldown = 4000 + Math.random() * 1000;
-        const eligiblePlayers = playerIds.filter(id => !room.players[id].perk && (now - (room.players[id].perkUsedAt || 0) > cooldown));
-        if (eligiblePlayers.length > 0) {
-            const randomPlayerId = eligiblePlayers[Math.floor(Math.random() * eligiblePlayers.length)];
-            const randomPerk = PERKS[Math.floor(Math.random() * PERKS.length)];
-            room.players[randomPlayerId].perk = randomPerk;
-            io.to(randomPlayerId).emit('perk_granted', { perk: randomPerk });
-        }
-    }, perkInterval);
+    
+    console.log(`Room ${roomId}: Starting 3s countdown.`);
+    room.status = 'countdown';
+    room.countdownEndTime = Date.now() + 3000;
+    
+    io.to(roomId).emit('room_state', getCleanRoomState(room));
+
+    setTimeout(() => {
+        const r = gameRooms.get(roomId);
+        if (!r) return;
+        r.status = 'playing';
+        io.to(roomId).emit('room_state', getCleanRoomState(r));
+    }, 3000);
 }
 
-function stopGameLoop(roomId) {
-    const room = gameRooms.get(roomId);
-    if (room && room.gameInterval) {
-        clearInterval(room.gameInterval);
-        delete room.gameInterval;
-    }
+// --- MODIFIED: Create and start a game from two matched players ---
+function createAndStartGame(player1, player2, isRanked = false) {
+    const roomId = randomUUID().slice(0, 8); // Game room ID
+    const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
+
+    const room = {
+        roomId,
+        text,
+        players: {},
+        status: 'waiting', // Will quickly transition to 'found'
+        isRanked,
+        isPrivate: false,
+        timerId: null,
+    };
+    
+    // Add players to room
+    room.players[player1.socket.id] = { username: player1.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsed: false };
+    room.players[player2.socket.id] = { username: player2.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsed: false };
+
+    gameRooms.set(roomId, room);
+
+    // Notify both players they have a match and join them to the Socket.IO room
+    player1.socket.join(roomId);
+    player2.socket.join(roomId);
+
+    // Send the initial game state to both players
+    io.to(roomId).emit('match_found', getCleanRoomState(room));
+    
+    console.log(`[Game] Match found! Room ${roomId} created for ${player1.username} and ${player2.username}.`);
+
+    // The game will wait for players to select perks on the client,
+    // which then triggers the 'player_ready' event and starts the countdown.
 }
+
 
 io.on('connection', (socket) => {
-    console.log('a user connected:', socket.id);
+    console.log('User connected:', socket.id);
+
+    // --- REVISED: Casual matchmaking using the dedicated module ---
+    socket.on('join_casual', async ({ username }) => {
+        try {
+            const user = await User.findOne({ username });
+            const stats = {
+                wpm: user ? user.averageWPM : 0,
+                accuracy: user ? user.averageAccuracy : 0,
+                gamesPlayed: user ? user.gamesPlayed : 0,
+                // winRate can be added if tracked
+            };
+
+            const result = casualMatchmaking.enqueue({
+                socket,
+                username,
+                stats,
+                skillScore: ranking.computeSkillScore(stats)
+            });
+
+            if (result.matched) {
+                // A match was found immediately
+                createAndStartGame(result.self, result.opponent, false);
+            } else {
+                // No match, player is now in the queue
+                socket.emit('waiting_for_match');
+                console.log(`[MM] ${username} is waiting for a casual match.`);
+            }
+        } catch (error) {
+            console.error('[MM] Error in casual matchmaking:', error);
+            socket.emit('matchmaking_error', { message: 'An error occurred while finding a match.' });
+        }
+    });
     
-    // --- Custom Lobby Handlers ---
+    socket.on('join_ranked', ({ username }) => {
+        // NOTE: The logic for ranked matchmaking can be improved similarly.
+        // For now, we leave the old logic in place for ranked.
+        joinGame(username, true)
+    });
+
+
+    // --- This is the OLD matchmaking logic, we will keep it for ranked for now ---
+    const joinGame = (username, isRanked) => {
+        let foundRoom = null;
+        for (const [id, r] of gameRooms) {
+            if (Object.keys(r.players).length < 4 && r.status === 'waiting' && r.isRanked === isRanked) {
+                foundRoom = r;
+                break;
+            }
+        }
+
+        const roomId = foundRoom ? foundRoom.roomId : randomUUID();
+        const room = foundRoom || {
+            roomId,
+            text: TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)],
+            players: {},
+            status: 'waiting',
+            isRanked,
+            waitingEndTime: null,
+            countdownEndTime: null,
+            suddenDeathEndTime: null,
+            timerId: null
+        };
+
+        if (!foundRoom) {
+            gameRooms.set(roomId, room);
+            room.waitingEndTime = Date.now() + 10000;
+            room.timerId = setTimeout(() => startCountdown(roomId), 10000);
+        }
+
+        room.players[socket.id] = { username, progress: 0, typedLength: 0, progressModifier: 0, wpm: 0, finished: false, perk: null, perkUsed: false };
+        socket.join(roomId);
+
+        socket.emit('match_found', getCleanRoomState(room));
+        io.to(roomId).emit('room_state', getCleanRoomState(room));
+
+        if (Object.keys(room.players).length === 4) {
+             if (room.timerId) clearTimeout(room.timerId);
+             startCountdown(roomId);
+        }
+    };
+
+    // --- CUSTOM LOBBY (Private) ---
     socket.on('create_private_lobby', ({ username }) => {
         const lobby = privateLobby.createRoom({ hostUsername: username, socket });
-        socket.join(lobby.roomId); // Join the socket to the room
+        socket.join(lobby.roomId);
         socket.emit('private_lobby_created', { roomId: lobby.roomId, roomState: lobby.roomState });
     });
 
     socket.on('join_private_lobby', ({ roomId, username }) => {
         try {
-            const lobby = privateLobby.joinRoom({ roomId, username, socket });
-            socket.join(roomId); // Join the socket to the room
-            io.to(roomId).emit('lobby_state_update', { roomId, ...lobby.roomState });
+            const lobbyState = privateLobby.joinRoom({ roomId, username, socket });
+            socket.join(roomId);
+            io.to(roomId).emit('lobby_state_update', { roomId, ...lobbyState.roomState });
         } catch (error) {
-            socket.emit('lobby_error', { message: error.message || 'Lobby not found or is full.' });
+            socket.emit('lobby_error', { message: error.message });
         }
     });
 
-    socket.on('start_private_game', ({ roomId }) => {
-        const lobby = privateLobby.getLobbyByRoomId(roomId);
-        if (lobby && lobby.sockets.has(socket.id) && lobby.host === lobby.sockets.get(socket.id)) {
+    socket.on('set_private_ready', ({ roomId, username, isReady }) => {
+        try {
+            const lobbyState = privateLobby.setReady(roomId, username, isReady);
+            io.to(roomId).emit('lobby_state_update', { roomId, ...lobbyState.roomState });
+        } catch (error) {
+            console.error("Set Ready Error:", error.message);
+        }
+    });
+    
+    socket.on('start_private_game', ({ roomId, username }) => {
+        try {
+            const lobby = privateLobby.getLobbyByRoomId(roomId);
+            if (!lobby || lobby.host !== username) return;
+            // if (!privateLobby.allReady(roomId)) return; // Optional check
+
             const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
             const players = {};
-            
             lobby.players.forEach(p => {
-                players[p.socket.id] = {
-                    username: p.username,
-                    progress: 0, wpm: 0, finished: false,
-                    perk: null, perkUsedAt: 0 // Correct initialization
-                };
+                players[p.socket.id] = { username: p.username, progress: 0, typedLength: 0, progressModifier: 0, wpm: 0, finished: false, perk: null, perkUsed: false };
             });
 
-            const roomState = { roomId, text, players, isRanked: false };
-            gameRooms.set(roomId, roomState);
+            const room = {
+                roomId,
+                text,
+                players,
+                status: 'waiting',
+                isRanked: false,
+                isPrivate: true,
+                lobbyEndTime: null,
+                timerId: null,
+                suddenDeathEndTime: null
+            };
+            
+            gameRooms.set(roomId, room);
+            // startCountdown(roomId); // REMOVED: Wait for players to select perks
+            io.to(roomId).emit('match_found', getCleanRoomState(room));
 
-            io.to(roomId).emit('match_found', { roomId, players: roomState.players, text });
-            startGameLoop(roomId);
-        }
-    });
-    
-    // --- Matchmaking Handlers ---
-    socket.on('join_casual', async ({ username }) => {
-        try {
-            let user = await User.findOne({ username });
-            if (!user) user = await User.create({ username });
-            const stats = { wpm: user.averageWPM, accuracy: user.averageAccuracy, gamesPlayed: user.gamesPlayed };
-            const skillScore = ranking.computeSkillScore(stats);
-            const result = casualMatchmaking.enqueue({ socket, username, stats, skillScore });
-            if (result.matched) {
-                const { self, opponent } = result;
-                const roomId = randomUUID();
-                const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
-                const roomState = {
-                    roomId, text, players: {
-                        [self.socket.id]: { username: self.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
-                        [opponent.socket.id]: { username: opponent.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
-                    }
-                };
-                gameRooms.set(roomId, roomState);
-                self.socket.join(roomId);
-                opponent.socket.join(roomId);
-                io.to(roomId).emit('match_found', { roomId, players: roomState.players, text });
-                startGameLoop(roomId);
-            } else {
-                socket.emit('waiting_for_match');
-            }
         } catch (error) {
-            socket.emit('matchmaking_error', { message: 'An error occurred.' });
+            console.error("Start Game Error:", error);
         }
     });
 
-    socket.on('join_ranked', async ({ username }) => {
-        try {
-            let user = await User.findOne({ username });
-            if (!user) user = await User.create({ username });
-            const opponent = rankedQueue.shift();
-            if (opponent) {
-                const self = { socket, username };
-                const roomId = randomUUID();
-                const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
-                const roomState = {
-                    roomId, text, isRanked: true, players: {
-                        [self.socket.id]: { username: self.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
-                        [opponent.socket.id]: { username: opponent.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsedAt: 0 },
-                    }
-                };
-                gameRooms.set(roomId, roomState);
-                self.socket.join(roomId);
-                opponent.socket.join(roomId);
-                io.to(roomId).emit('match_found', { roomId, players: roomState.players, text });
-                startGameLoop(roomId);
-            } else {
-                rankedQueue.push({ socket, username });
-                socket.emit('waiting_for_match');
-            }
-        } catch (error) {
-            socket.emit('matchmaking_error', { message: 'An error occurred in ranked queue.' });
-        }
-    });
-
-    // --- In-Game Handlers ---
-    socket.on('use_perk', ({ roomId, perk }) => {
+    socket.on('join_specific_room', ({ roomId, username }) => {
         const room = gameRooms.get(roomId);
-        const player = room?.players[socket.id];
-        if (!player || player.perk !== perk) return;
-
-        player.perk = null;
-        player.perkUsedAt = Date.now();
-        socket.emit('perk_used');
-
-        if (perk === 'ASTEROID_ATTACK') socket.to(roomId).emit('asteroid_hit');
-        else if (perk === 'ROCKET_FUEL') {
-            const boostLength = Math.floor(room.text.length * 0.15);
-            const autoCompletedText = room.text.substring(player.progress || 0, (player.progress || 0) + boostLength);
-            socket.emit('perk_effect_rocket_fuel', { autoCompletedText });
-        } 
-        else if (perk === 'REPULSOR_WAVE') socket.to(roomId).emit('repulsor_hit');
-        else if (perk === 'NEBULA_CLOUD') socket.to(roomId).emit('nebula_hit');
+        if (room) {
+            if (!room.players[socket.id]) {
+                 room.players[socket.id] = { username, progress: 0, typedLength: 0, progressModifier: 0, wpm: 0, finished: false, perk: null, perkUsed: false };
+                 socket.join(roomId);
+            }
+            socket.emit('room_state', getCleanRoomState(room));
+            io.to(roomId).emit('players_update', room.players);
+        } else {
+            socket.emit('error', { message: 'Room not found' });
+        }
     });
-    
-        // RESTORED: endGame function
-    async function endGame(roomId) {
+
+    socket.on('player_ready', ({ roomId, perk }) => {
+        const room = gameRooms.get(roomId);
+        if (room && room.players[socket.id]) {
+            room.players[socket.id].perk = perk;
+        }
+
+        // For all match types, check if all players are ready to start
+        if (room) {
+            const allPlayersReady = Object.values(room.players).every(p => p.perk);
+            if (allPlayersReady) {
+                startCountdown(roomId);
+            }
+        }
+    });
+
+    socket.on('activate_perk', ({ roomId, perkName }) => {
+        const room = gameRooms.get(roomId);
+        if (!room || !room.players[socket.id] || room.players[socket.id].perkUsed) return;
+
+        room.players[socket.id].perkUsed = true;
+        const opponents = Object.keys(room.players).filter(id => id !== socket.id);
+        const randomOpponentId = opponents[Math.floor(Math.random() * opponents.length)];
+        // const textLen = room.text.length; // Unused now
+
+        switch (perkName) {
+            case 'Solar Flare':
+                if (randomOpponentId) {
+                    io.to(roomId).emit('perk_effect', { perkName, targetPlayerId: randomOpponentId });
+                }
+                break;
+            case 'Hyperdrive':
+                io.to(roomId).emit('perk_effect', { perkName, targetPlayerId: socket.id });
+                break;
+            case 'Tractor Beam':
+                if (randomOpponentId) {
+                    io.to(roomId).emit('perk_effect', { perkName, targetPlayerId: randomOpponentId });
+                }
+                break;
+            case 'System Hack':
+                if (randomOpponentId) {
+                    io.to(roomId).emit('perk_effect', { perkName, targetPlayerId: randomOpponentId });
+                }
+                break;
+        }
+    });
+
+    socket.on('player_progress', ({ roomId, typedLength, wpm }) => {
         const room = gameRooms.get(roomId);
         if (!room) return;
-        if (room.suddenDeathTimer) clearTimeout(room.suddenDeathTimer);
-
-        const finishedPlayers = Object.values(room.players).filter(p => p.finished);
-
-        // Update stats for all finished players
-        for (const player of finishedPlayers) {
-            await User.findOneAndUpdate(
-                { username: player.username },
-                { 
-                    $inc: { gamesPlayed: 1 }, 
-                    $set: { averageWPM: player.wpm, averageAccuracy: player.accuracy } 
-                },
-                { upsert: true }
-            );
-        }
         
-        // Handle ELO calculation for ranked games
-        if (room.isRanked && finishedPlayers.length >= 2) {
-            const winner = finishedPlayers.reduce((prev, current) => ((current.wpm || 0) > (prev.wpm || 0)) ? current : prev);
-            const loser = finishedPlayers.find(p => p.username !== winner.username);
-            
-            if (winner && loser) {
-                const winnerDoc = await User.findOne({ username: winner.username });
-                const loserDoc = await User.findOne({ username: loser.username });
-
-                const newRatings = ranking.updateRatings(winnerDoc.rating, loserDoc.rating, 1);
-                
-                await User.updateOne({ _id: winnerDoc._id }, { $set: { rating: newRatings.playerA } });
-                await User.updateOne({ _id: loserDoc._id }, { $set: { rating: newRatings.playerB } });
-
-                // Attach new ratings to the payload to send to clients
-                const winnerPlayerState = Object.values(room.players).find(p => p.username === winner.username);
-                const loserPlayerState = Object.values(room.players).find(p => p.username === loser.username);
-                if (winnerPlayerState) winnerPlayerState.newRank = newRatings.playerA;
-                if (loserPlayerState) loserPlayerState.newRank = newRatings.playerB;
-            }
-        }
+        // Strict status check to prevent premature playing
+        if (room.status !== 'playing' && room.status !== 'sudden_death') return;
         
-        io.to(roomId).emit('game_over', { players: room.players });
-        stopGameLoop(roomId);
-        setTimeout(() => gameRooms.delete(roomId), 10000); // Clean up room after a delay
-    }
-    
-    // RESTORED: player_finished handler
-    socket.on('player_finished', async ({ roomId, wpm, accuracy }) => {
+        if (!room.players[socket.id]) return;
+
+        const p = room.players[socket.id];
+        p.typedLength = typedLength || 0;
+        p.wpm = wpm;
+        
+        const textLen = room.text.length;
+        p.progress = Math.min(100, Math.max(0, (p.typedLength / textLen * 100) + p.progressModifier));
+        
+        io.to(roomId).emit('players_update', room.players);
+    });
+
+    socket.on('player_finished', ({ roomId, wpm }) => {
         const room = gameRooms.get(roomId);
-        if (!room || !room.players[socket.id] || room.players[socket.id].finished) return;
+        if (!room || !room.players[socket.id]) return;
 
-        const playerState = room.players[socket.id];
-        playerState.finished = true;
-        playerState.wpm = wpm;
-        playerState.accuracy = accuracy;
+        room.players[socket.id].finished = true;
+        room.players[socket.id].progress = 100;
+        room.players[socket.id].wpm = wpm;
         
-        io.to(roomId).emit('opponent_progress', { playerId: socket.id, progress: 100, wpm: Math.round(wpm), finished: true });
+        io.to(roomId).emit('players_update', room.players);
 
-        const playerStates = Object.values(room.players);
-        const finishedCount = playerStates.filter(p => p.finished).length;
-        const totalPlayers = playerStates.length;
+        const finishers = Object.values(room.players).filter(p => p.finished).length;
+        const total = Object.keys(room.players).length;
 
-        if (finishedCount === totalPlayers) {
-            if (room.suddenDeathTimer) clearTimeout(room.suddenDeathTimer);
-            await endGame(roomId);
-        } else if (finishedCount === 1 && totalPlayers > 1) {
-            const countdownDuration = 15;
-            io.to(roomId).emit('suddenDeath', { duration: countdownDuration });
-            room.suddenDeathTimer = setTimeout(() => endGame(roomId), countdownDuration * 1000);
-        } else if (totalPlayers === 1) {
-            await endGame(roomId);
+        if (finishers === 1 && total > 1) {
+            console.log(`Room ${roomId}: Sudden Death triggered!`);
+            room.status = 'sudden_death';
+            room.suddenDeathEndTime = Date.now() + 10000;
+            if (room.timerId) clearTimeout(room.timerId);
+            
+            io.to(roomId).emit('room_state', getCleanRoomState(room));
+            room.timerId = setTimeout(() => {
+                console.log(`Room ${roomId}: Sudden Death expired.`);
+                endGame(roomId);
+            }, 10000);
+        } else if (finishers === total || total === 1) {
+            endGame(roomId);
         }
     });
-    
 
     socket.on('disconnect', () => {
-        console.log('user disconnected:', socket.id);
+        // --- ADDED: Remove player from casual matchmaking queue on disconnect ---
         casualMatchmaking.removeBySocket(socket);
-        const rankedIndex = rankedQueue.findIndex(p => p.socket.id === socket.id);
-        if (rankedIndex > -1) rankedQueue.splice(rankedIndex, 1);
-        
-        privateLobby.removePlayerBySocket(socket).forEach(lobby => {
-            if (lobby.roomState) io.to(lobby.roomId).emit('lobby_state_update', { roomId: lobby.roomId, ...lobby.roomState });
+
+        const updates = privateLobby.removePlayerBySocket(socket);
+        updates.forEach(({ roomId, roomState }) => {
+            if (roomState) io.to(roomId).emit('lobby_state_update', { roomId, ...roomState });
         });
+
+        const idx = rankedQueue.findIndex(p => p.socket.id === socket.id);
+        if (idx !== -1) rankedQueue.splice(idx, 1);
+
+        gameRooms.forEach((room, rId) => {
+            if (room.players[socket.id]) {
+                delete room.players[socket.id];
+                if (Object.keys(room.players).length === 0) gameRooms.delete(rId);
+                else io.to(rId).emit('players_update', room.players);
+            }
+        });
+        console.log('User disconnected:', socket.id);
     });
 });
 
-
-app.use((req, res) => {
-  res.sendFile(path.join(__dirname, '../dist/index.html'));
-});
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server listening on 0.0.0.0:${PORT}`);
-});
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server listening on 0.0.0.0:${PORT}`));

@@ -17,9 +17,20 @@ const CustomLobby = () => {
     if (!socket) return;
 
     // This single event will keep the lobby UI in sync for all players.
-    const handleLobbyUpdate = (state) => {
-      setError(''); // Clear previous errors on a successful update
-      setLobbyState(state);
+    const handleLobbyUpdate = (data) => {
+      setError(''); 
+      // data might be { roomId, ...roomState } or just roomState. 
+      // We ensure roomId persists if already set, or comes from data.
+      setLobbyState(prev => ({
+          ...prev,
+          ...data,
+          roomId: data.roomId || prev?.roomId
+      }));
+    };
+
+    const handleLobbyCreated = ({ roomId, roomState }) => {
+        setError('');
+        setLobbyState({ ...roomState, roomId });
     };
 
     const handleError = (data) => {
@@ -28,42 +39,43 @@ const CustomLobby = () => {
 
     // This event tells the client to navigate to the game screen.
     const handleGameStarting = (gameData) => {
-      // The 'state' is passed to the Game component to load the correct text and players.
       navigate(`/game/${gameData.roomId}`, { state: { ...gameData } });
     };
 
     // Listen for events from the server
     socket.on('lobby_state_update', handleLobbyUpdate);
+    socket.on('private_lobby_created', handleLobbyCreated); // NEW Listener
     socket.on('lobby_error', handleError);
-    socket.on('game_starting', handleGameStarting);
+    socket.on('match_found', handleGameStarting); // Changed from game_starting to match_found
 
     // Clean up listeners when the component is unmounted
     return () => {
       socket.off('lobby_state_update', handleLobbyUpdate);
+      socket.off('private_lobby_created', handleLobbyCreated);
       socket.off('lobby_error', handleError);
-      socket.off('game_starting', handleGameStarting);
+      socket.off('match_found', handleGameStarting);
     };
   }, [socket, navigate]);
 
   // --- Functions to emit events to the server ---
   const handleCreateLobby = () => {
-    socket.emit('create_lobby', { username });
+    socket.emit('create_private_lobby', { username }); // Fixed Event Name
   };
 
   const handleJoinLobby = (e) => {
     e.preventDefault();
     if (!joinRoomId.trim()) return;
-    socket.emit('join_lobby', { username, roomId: joinRoomId.trim() });
+    socket.emit('join_private_lobby', { username, roomId: joinRoomId.trim() }); // Fixed Event Name
   };
 
   const handleSetReady = () => {
     const me = lobbyState.players.find(p => p.username === username);
     if (!me) return;
-    socket.emit('set_ready', { roomId: lobbyState.roomId, username, isReady: !me.isReady });
+    socket.emit('set_private_ready', { roomId: lobbyState.roomId, username, isReady: !me.isReady }); // Fixed Event Name
   };
   
   const handleStartGame = () => {
-      socket.emit('start_game', { roomId: lobbyState.roomId, username });
+      socket.emit('start_private_game', { roomId: lobbyState.roomId, username }); // Fixed Event Name
   };
 
   const copyToClipboard = () => {

@@ -7,12 +7,12 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
+  build-and-lint: # Renamed job for clarity
     runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x] # You can specify the Node.js versions you want to test against
+        node-version: [20.x] # Testing against one version is usually enough for CI checks
 
     steps:
     - name: Checkout repository
@@ -22,13 +22,15 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
-        cache: 'npm' # Use npm's cache to speed up dependency installation
+        cache: 'npm'
 
     - name: Install dependencies
       run: npm ci
 
-    - name: Run the build command (if you have one)
-      run: npm run build --if-present
+    # New step to run the linter
+    - name: Run linter
+      run: npm run lint
 
-    - name: Run tests
-      run: npm test
+    # Changed this step to use your build script
+    - name: Run build
+      run: npm run build

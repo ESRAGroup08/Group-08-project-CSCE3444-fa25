@@ -6,7 +6,6 @@ const cors = require('cors');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const { randomUUID } = require('crypto');
-
 const casualMatchmaking = require('./casualMatchmaking');
 const ranking = require('./ranking');
 const privateLobby = require('./privateLobby');
@@ -33,7 +32,7 @@ const io = new Server(server, {
 });
 
 // --- Database Connection ---
-mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://game_user:testuser123@gltp0.tez957z.mongodb.net/?appName=GLTP0')
+mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB connected successfully.'))
   .catch(err => console.error('MongoDB connection error:', err));
   
@@ -377,19 +376,38 @@ io.on('connection', (socket) => {
                 wpm: user ? user.averageWPM : 0,
                 accuracy: user ? user.averageAccuracy : 0,
                 gamesPlayed: user ? user.gamesPlayed : 0,
-                // winRate can be added if tracked
             };
 
-            const result = casualMatchmaking.enqueue({
+            // The enqueue function is now async
+            const result = await casualMatchmaking.enqueue({
                 socket,
                 username,
-                stats,
+                stats, // stats are no longer used in the new module, but we can keep it for now
                 skillScore: ranking.computeSkillScore(stats)
             });
 
             if (result.matched) {
                 // A match was found immediately
-                createAndStartGame(result.self, result.opponent, false);
+                // We need to find the socket objects for the matched players
+                const selfSocket = io.sockets.sockets.get(result.self.socketId);
+                const opponentSocket = io.sockets.sockets.get(result.opponent.socketId);
+
+                if (selfSocket && opponentSocket) {
+                    createAndStartGame(
+                        { socket: selfSocket, username: result.self.username }, 
+                        { socket: opponentSocket, username: result.opponent.username }, 
+                        false
+                    );
+                } else {
+                    // One of the players disconnected in the tiny window between matching and starting the game.
+                    // We should put the remaining player back in the queue if they are still connected.
+                    console.log("[MM] A matched player disconnected before game could start.");
+                    if (selfSocket) {
+                        // Re-queue self
+                        socket.emit('matchmaking_error', { message: 'Your opponent disconnected. Finding a new match...' });
+                        // You could call enqueue again here for the remaining player
+                    }
+                }
             } else {
                 // No match, player is now in the queue
                 socket.emit('waiting_for_match');
@@ -616,10 +634,10 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         // --- ADDED: Remove player from casual matchmaking queue on disconnect ---
-        casualMatchmaking.removeBySocket(socket);
-
+        //casualMatchmaking.removeBySocket(socket);
+        await casualMatchmaking.removeBySocketId(socket.id);
         const updates = privateLobby.removePlayerBySocket(socket);
         updates.forEach(({ roomId, roomState }) => {
             if (roomState) io.to(roomId).emit('lobby_state_update', { roomId, ...roomState });

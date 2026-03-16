@@ -1,169 +1,136 @@
+// --- NEW: Import the Redis client ---
+const redisClient = require('./redisClient');
 
-// casualMatchmaking.js
-// FR-08: Unranked / Casual Matchmaking module
-//
-// Responsibilities:
-// - Manage a queue of players seeking casual (unranked) matches
-// - Match players with similar transient skill (computed from recent stats)
-// - Gradually relax matching threshold as players wait to reduce wait times
-// - Handle timeouts, disconnects, and queue removal
-// - Provide hooks for the server to notify sockets (no direct socket.io dependency here)
-//
-// Usage (server):
-// const casual = require('./casualMatchmaking');
-// const opponent = casual.enqueue({ socket, username, stats });
-// if (opponent) { /* start match */ } else { /* wait */ }
-//
-// The module is intentionally dependency-free so it is easy to unit-test and to reuse.
+// The queue is no longer an in-memory array. Redis will manage it.
+// const QUEUE = []; // This is no longer needed
 
 const DEFAULT_OPTIONS = {
   thresholdBase: 15,     // initial allowed difference in skillScore
   expandPerSecond: 5,    // how much the threshold widens per second of waiting
   maxThreshold: 100,     // cap on threshold widening
   maxQueueTimeSec: 60,   // remove stale entries after this many seconds (optional)
-  pairCooldownMs: 1000,  // optional small cooldown to avoid immediate re-pairing loops
+  // --- NEW: Define a prefix for our Redis keys ---
+  queuePrefix: 'matchmaking:casual',
 };
 
-// Internal queue: array of entries
-// entry = {
-//   id: a unique id (string)
-//   socket: reference (opaque to module, used for matching removal by server)
-//   username: string
-//   stats: { wpm, accuracy, winRate, gamesPlayed }
-//   skillScore: number (0..100 computed by server ranking.computeSkillScore or locally prior to enqueue)
-//   enqueuedAt: timestamp (ms)
-//   lastPairedAt: timestamp (ms) optional to avoid immediate repeat matches
-// }
-const QUEUE = [];
-
-// Utility: generate short unique id for queue entries
-function makeId() {
-  return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+// --- NEW: Helper to get the Redis key for a given skill score ---
+function getQueueKey(skillScore) {
+  // Group players into buckets of 20 skill points.
+  // e.g., skill 0-19 -> bucket 0, 20-39 -> bucket 1, etc.
+  const bucket = Math.floor(skillScore / 20);
+  return `${DEFAULT_OPTIONS.queuePrefix}:${bucket}`;
 }
 
-// Public: compute dynamic threshold based on how long each player has waited
-function computeDynamicThreshold(base, expandPerSecond, waitedSec, waitedOtherSec, maxThreshold) {
-  const waited = Math.max(0, Math.floor(Math.max(waitedSec, waitedOtherSec)));
-  const dynamic = base + expandPerSecond * waited;
-  return Math.min(dynamic, maxThreshold);
-}
-
-// Public: enqueue a player and try to find a match immediately.
-// params:
-//  - entryIn: { socket, username, stats, skillScore } (skillScore optional; if omitted compute must be done before calling)
-//  - opts: overrides for options (optional)
-// Returns:
-//  - If a match found: { matched: true, opponent: opponentEntry, self: entry }
-//  - If no match: { matched: false, entry: enqueuedEntry }
-// Public: enqueue a player and try to find a match immediately.
-function enqueue(entryIn = {}, opts = {}) {
-  const options = { ...DEFAULT_OPTIONS, ...opts };
-  if (!entryIn || !entryIn.socket || !entryIn.username) {
-    throw new Error('enqueue requires { socket, username, stats, skillScore }');
+// --- REFACTORED: The enqueue function is now async and uses Redis ---
+async function enqueue(entryIn = {}) {
+  if (!entryIn || !entryIn.socket || !entryIn.username || typeof entryIn.skillScore !== 'number') {
+    throw new Error('enqueue requires { socket, username, skillScore }');
   }
 
+  const { socket, username, skillScore } = entryIn;
   const now = Date.now();
-  const entry = {
-    id: makeId(),
-    socket: entryIn.socket,
-    username: entryIn.username,
-    stats: entryIn.stats || {},
-    skillScore: typeof entryIn.skillScore === 'number' ? entryIn.skillScore : (entryIn.stats ? Math.round((entryIn.stats.wpm || 0) * 0.7 + (entryIn.stats.accuracy || 0) * 0.2 + ((entryIn.stats.winRate || 0) * 100) * 0.1) : 0),
-    enqueuedAt: now,
-    lastPairedAt: 0,
-  };
 
-  // Clean stale entries first
-  purgeStale(options.maxQueueTimeSec);
+  // The unique ID for a player in the queue will be their socket.id
+  const playerId = socket.id;
 
- 
+  // Store player data in a Redis Hash for quick lookups
+  // This replaces storing the whole object in the old QUEUE array.
+  const playerDataKey = `player:${playerId}`;
+  await redisClient.hSet(playerDataKey, {
+    username,
+    skillScore: skillScore.toString(),
+    enqueuedAt: now.toString(),
+  });
+  // Set an expiration on this player data to auto-clean it
+  await redisClient.expire(playerDataKey, DEFAULT_OPTIONS.maxQueueTimeSec);
 
 
-  // Attempt to find an opponent
-  for (let i = 0; i < QUEUE.length; i++) {
-    const other = QUEUE[i];
+  // --- Matchmaking Logic ---
+  const queueKey = getQueueKey(skillScore);
+  const searchRadius = DEFAULT_OPTIONS.thresholdBase; // Start with the base threshold
 
-    // Don't match same socket or immediate re-pair within cooldown
-    if (other.socket === entry.socket) continue;
-    if (other.lastPairedAt && (now - other.lastPairedAt) < options.pairCooldownMs) continue;
-    if (entry.lastPairedAt && (now - entry.lastPairedAt) < options.pairCooldownMs) continue;
+  // Search for an opponent with a similar score in the same bucket
+  // ZRANGEBYSCORE lets us find players within a score range.
+  const potentialOpponents = await redisClient.zRangeByScore(
+    queueKey,
+    skillScore - searchRadius,
+    skillScore + searchRadius
+  );
 
-    const waitedOther = (now - other.enqueuedAt) / 1000;
-    // We can consider the new player's wait time as 0, which is what's happening implicitly.
-    const waitedSelf = 0; 
-    const dynamicThreshold = computeDynamicThreshold(options.thresholdBase, options.expandPerSecond, waitedSelf, waitedOther, options.maxThreshold);
-    
-    const skillDifference = Math.abs(other.skillScore - entry.skillScore);
+  let opponentId = potentialOpponents.find(id => id !== playerId); // Don't match with self
 
-    
-    if (skillDifference <= dynamicThreshold) {
-      // remove opponent from queue
-      QUEUE.splice(i, 1);
-      // set lastPairedAt to avoid immediate rematching
-      other.lastPairedAt = now;
-      entry.lastPairedAt = now;
+  if (opponentId) {
+    // --- MATCH FOUND ---
+
+    // Atomically remove the opponent from the queue to prevent race conditions
+    const removed = await redisClient.zRem(queueKey, opponentId);
+
+    if (removed > 0) {
+      console.log(`[MM-Redis] Match found for ${username} with ${opponentId}.`);
       
-  
-      
-      return { matched: true, opponent: other, self: entry };
+      // Retrieve opponent's data from Redis
+      const opponentData = await redisClient.hGetAll(`player:${opponentId}`);
+
+      // Clean up player data from Redis
+      await redisClient.del(playerDataKey);
+      await redisClient.del(`player:${opponentId}`);
+
+      return {
+        matched: true,
+        opponent: { 
+          socketId: opponentId, // The server will need the socket ID
+          username: opponentData.username,
+          skillScore: parseFloat(opponentData.skillScore)
+        },
+        self: { 
+          socketId: playerId,
+          username: username,
+          skillScore: skillScore
+        },
+      };
     }
   }
 
-  // No match: push to queue
-  QUEUE.push(entry);
+  // --- NO MATCH FOUND: Add player to the queue ---
+  console.log(`[MM-Redis] No match found for ${username}. Adding to queue.`);
 
-  // --- DEBUG LOGGING ---
-  console.log(`[MM] No match found for ${entry.username}. Added to queue.`);
-  // --- END DEBUG LOGGING ---
+  // Add the player to the sorted set. The `skillScore` is used for sorting.
+  // The 'NX' option means this will only add the member if it's not already there.
+  await redisClient.zAdd(queueKey, { score: skillScore, value: playerId }, { NX: true });
   
-  return { matched: false, entry };
+  return { matched: false, entry: { socketId: playerId, username, skillScore } };
 }
 
-// Public: remove a queued entry by predicate (e.g., socket or username). Returns removed entry or null.
-function remove(predicate) {
-  const idx = QUEUE.findIndex(predicate);
-  if (idx === -1) return null;
-  return QUEUE.splice(idx, 1)[0];
-}
-
-// Convenience: remove by socket identity (server will call this on disconnect)
-function removeBySocket(socket) {
-  return remove((e) => e.socket === socket);
-}
-
-// Public: peek queue for diagnostics (shallow copy)
-function listQueue() {
-  return QUEUE.map((e) => ({ id: e.id, username: e.username, skillScore: e.skillScore, enqueuedAt: e.enqueuedAt }));
-}
-
-// Public: purge entries older than maxAgeSec. Returns number removed.
-function purgeStale(maxAgeSec = DEFAULT_OPTIONS.maxQueueTimeSec) {
-  if (!maxAgeSec || maxAgeSec <= 0) return 0;
-  const now = Date.now();
-  const before = QUEUE.length;
-  for (let i = QUEUE.length - 1; i >= 0; i--) {
-    const e = QUEUE[i];
-    if ((now - e.enqueuedAt) > (maxAgeSec * 1000)) {
-      QUEUE.splice(i, 1);
-    }
+// --- REFACTORED: remove function to use Redis ---
+async function removeBySocketId(socketId) {
+  // We need to find which queue the player was in.
+  // This is a simplification; a real implementation might need to scan buckets.
+  // For now, we assume we can reconstruct the key or we remove it when we know it.
+  const playerData = await redisClient.hGetAll(`player:${socketId}`);
+  if (playerData.skillScore) {
+      const queueKey = getQueueKey(parseFloat(playerData.skillScore));
+      await redisClient.zRem(queueKey, socketId);
   }
-  return before - QUEUE.length;
+  await redisClient.del(`player:${socketId}`);
+  console.log(`[MM-Redis] Removed ${socketId} from matchmaking.`);
 }
 
-// Public: clear queue (testing/admin)
-function clearQueue() {
-  QUEUE.length = 0;
+// Public: clear all casual matchmaking keys (for testing/admin)
+async function clearQueue() {
+  const stream = redisClient.scanIterator({
+    MATCH: `${DEFAULT_OPTIONS.queuePrefix}:*`,
+    COUNT: 100,
+  });
+  for await (const key of stream) {
+    await redisClient.del(key);
+  }
+  console.log('[MM-Redis] All casual matchmaking queues cleared.');
 }
 
-// Export API
+// Export the new API
 module.exports = {
   enqueue,
-  remove,
-  removeBySocket,
-  listQueue,
-  purgeStale,
+  removeBySocketId,
   clearQueue,
-  // expose internal queue for debug/tests (read-only recommended)
-  _QUEUE: QUEUE,
   DEFAULT_OPTIONS,
 };

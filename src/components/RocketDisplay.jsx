@@ -16,10 +16,10 @@ export function RocketDisplay({ players }) {
     });
 
   return (
-    <div className='relative bg-red-600 p-6 overflow-hidden rounded-t-xl border-x border-t border-slate-700 flex flex-col'>
-      {/* Background */}
+    <div className='relative bg-transparent p-6 overflow-hidden rounded-t-3xl border-x-8 border-t-8 border-slate-600 flex flex-col shadow-[0_-20px_50px_-12px_rgba(0,0,0,0.5)]'>
+      {/* Background (Removed indigo gradient) */}
       <div className='absolute inset-0 overflow-hidden'>
-        <div className='absolute inset-0 bg-gradient-to-b from-indigo-950 via-purple-950 to-slate-950' />
+        <div className='absolute inset-0 bg-black/40 backdrop-blur-sm' />
       </div>
 
       {/* Grid for Rockets (Fixed 4 lanes) */}

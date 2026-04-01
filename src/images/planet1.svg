@@ -1,0 +1,14 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="p1grad" cx="50%" cy="50%" r="50%" fx="25%" fy="25%">
+      <stop offset="0%" style="stop-color:#fcd34d;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#d97706;stop-opacity:1" />
+    </radialGradient>
+  </defs>
+  <!-- Ring -->
+  <ellipse cx="100" cy="100" rx="90" ry="20" transform="rotate(-30 100 100)" fill="none" stroke="#fde68a" stroke-width="10" opacity="0.8" />
+  <!-- Planet -->
+  <circle cx="100" cy="100" r="50" fill="url(#p1grad)" />
+  <!-- Ring Front (clip part of the ring to make it look like it goes around) -->
+  <!-- Simplified: just simple ring behind and planet on top is usually okay for flat style, but let's just stick to planet over ring -->
+</svg>

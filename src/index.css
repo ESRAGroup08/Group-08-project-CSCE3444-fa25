@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.js";
 
 :root {
   --bg-primary: #111827; /* dark */
@@ -11,10 +10,29 @@
   --accent: #06b6d4;
 }
 
-body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
+html, body {
   margin: 0;
   padding: 0;
+  width: 100%;
+  min-height: 100%;
+  background-color: #000000; /* Solid black base */
+  box-sizing: border-box;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  color: var(--text-primary);
   min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.App {
+  position: relative;
+  z-index: 1; /* Sit above the fixed background */
+  min-height: 100vh;
+  width: 100%;
 }

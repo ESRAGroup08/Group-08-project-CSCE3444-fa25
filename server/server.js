@@ -314,158 +314,182 @@ function endGame(roomId) {
 
 function startCountdown(roomId) {
     const room = gameRooms.get(roomId);
-    if (!room) return;
+    if (!room || room.status === 'countdown' || room.status === 'playing') return;
     
-    console.log(`Room ${roomId}: Starting 3s countdown.`);
+    // Clear any existing timers
+    if (room.timerId) {
+        clearTimeout(room.timerId);
+        room.timerId = null;
+    }
+    
+    console.log(`Room ${roomId}: Starting 3s ignition countdown.`);
     room.status = 'countdown';
     room.countdownEndTime = Date.now() + 3000;
     
     io.to(roomId).emit('room_state', getCleanRoomState(room));
 
-    setTimeout(() => {
+    room.timerId = setTimeout(() => {
         const r = gameRooms.get(roomId);
-        if (!r) return;
+        if (!r || r.status !== 'countdown') return;
         r.status = 'playing';
+        r.timerId = null;
         io.to(roomId).emit('room_state', getCleanRoomState(r));
+    }, 3000);
+}
+
+// --- NEW: Final perk selection countdown ---
+function startFinalPerkSelection(roomId) {
+    const room = gameRooms.get(roomId);
+    if (!room || room.status !== 'waiting') return;
+
+    // Clear the 10s waiting timer
+    if (room.timerId) {
+        clearTimeout(room.timerId);
+        room.timerId = null;
+    }
+
+    console.log(`Room ${roomId}: Starting 3s final perk selection.`);
+    room.status = 'perk_selection';
+    room.countdownEndTime = Date.now() + 3000;
+    
+    io.to(roomId).emit('room_state', getCleanRoomState(room));
+
+    room.timerId = setTimeout(() => {
+        const r = gameRooms.get(roomId);
+        if (!r || r.status !== 'perk_selection') return;
+        
+        // Assign random perks to those who still haven't picked
+        Object.values(r.players).forEach(p => {
+            if (!p.perk) {
+                const perks = ['Solar Flare', 'Hyperdrive', 'Tractor Beam', 'System Hack'];
+                p.perk = perks[Math.floor(Math.random() * perks.length)];
+            }
+        });
+        
+        startCountdown(roomId);
     }, 3000);
 }
 
 // --- MODIFIED: Create and start a game from two matched players ---
 function createAndStartGame(player1, player2, isRanked = false) {
-    const roomId = randomUUID().slice(0, 8); // Game room ID
+    const roomId = randomUUID().slice(0, 8); 
     const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
 
     const room = {
         roomId,
         text,
         players: {},
-        status: 'waiting', // Will quickly transition to 'found'
+        status: 'waiting', 
         isRanked,
         isPrivate: false,
         timerId: null,
+        waitingEndTime: Date.now() + 10000,
+        countdownEndTime: null,
+        suddenDeathEndTime: null
     };
     
     // Add players to room
-    room.players[player1.socket.id] = { username: player1.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsed: false };
-    room.players[player2.socket.id] = { username: player2.username, progress: 0, wpm: 0, finished: false, perk: null, perkUsed: false };
+    room.players[player1.socket.id] = { username: player1.username, progress: 0, typedLength: 0, progressModifier: 0, wpm: 0, finished: false, perk: null, perkUsed: false };
+    room.players[player2.socket.id] = { username: player2.username, progress: 0, typedLength: 0, progressModifier: 0, wpm: 0, finished: false, perk: null, perkUsed: false };
 
     gameRooms.set(roomId, room);
 
-    // Notify both players they have a match and join them to the Socket.IO room
     player1.socket.join(roomId);
     player2.socket.join(roomId);
 
-    // Send the initial game state to both players
     io.to(roomId).emit('match_found', getCleanRoomState(room));
     
     console.log(`[Game] Match found! Room ${roomId} created for ${player1.username} and ${player2.username}.`);
 
-    // The game will wait for players to select perks on the client,
-    // which then triggers the 'player_ready' event and starts the countdown.
+    // Start the 10s queue timer
+    room.timerId = setTimeout(() => {
+        startFinalPerkSelection(roomId);
+    }, 10000);
 }
 
 
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
-    // --- REVISED: Casual matchmaking using the dedicated module ---
-    socket.on('join_casual', async ({ username }) => {
-        try {
-            const user = await User.findOne({ username });
-            const stats = {
-                wpm: user ? user.averageWPM : 0,
-                accuracy: user ? user.averageAccuracy : 0,
-                gamesPlayed: user ? user.gamesPlayed : 0,
-            };
-
-            // The enqueue function is now async
-            const result = await casualMatchmaking.enqueue({
-                socket,
-                username,
-                stats, // stats are no longer used in the new module, but we can keep it for now
-                skillScore: ranking.computeSkillScore(stats)
-            });
-
-            if (result.matched) {
-                // A match was found immediately
-                // We need to find the socket objects for the matched players
-                const selfSocket = io.sockets.sockets.get(result.self.socketId);
-                const opponentSocket = io.sockets.sockets.get(result.opponent.socketId);
-
-                if (selfSocket && opponentSocket) {
-                    createAndStartGame(
-                        { socket: selfSocket, username: result.self.username }, 
-                        { socket: opponentSocket, username: result.opponent.username }, 
-                        false
-                    );
-                } else {
-                    // One of the players disconnected in the tiny window between matching and starting the game.
-                    // We should put the remaining player back in the queue if they are still connected.
-                    console.log("[MM] A matched player disconnected before game could start.");
-                    if (selfSocket) {
-                        // Re-queue self
-                        socket.emit('matchmaking_error', { message: 'Your opponent disconnected. Finding a new match...' });
-                        // You could call enqueue again here for the remaining player
-                    }
-                }
-            } else {
-                // No match, player is now in the queue
-                socket.emit('waiting_for_match');
-                console.log(`[MM] ${username} is waiting for a casual match.`);
-            }
-        } catch (error) {
-            console.error('[MM] Error in casual matchmaking:', error);
-            socket.emit('matchmaking_error', { message: 'An error occurred while finding a match.' });
-        }
-    });
-    
-    socket.on('join_ranked', ({ username }) => {
-        // NOTE: The logic for ranked matchmaking can be improved similarly.
-        // For now, we leave the old logic in place for ranked.
-        joinGame(username, true)
-    });
-
-
-    // --- This is the OLD matchmaking logic, we will keep it for ranked for now ---
+    // --- Unified Matchmaking Handler ---
     const joinGame = (username, isRanked) => {
+        // 1. Check if socket is already in a room to prevent double-queuing
+        let currentRoom = null;
+        gameRooms.forEach((r) => {
+            if (r.players[socket.id]) currentRoom = r;
+        });
+        if (currentRoom) {
+            console.log(`[MM] Player ${username} already in room ${currentRoom.roomId}. Ignoring request.`);
+            return;
+        }
+
+        // 2. Find an existing 'waiting' room of the same type
         let foundRoom = null;
         for (const [id, r] of gameRooms) {
-            if (Object.keys(r.players).length < 4 && r.status === 'waiting' && r.isRanked === isRanked) {
+            if (
+                Object.keys(r.players).length < 4 && 
+                r.status === 'waiting' && 
+                r.isRanked === isRanked && 
+                !r.isPrivate
+            ) {
                 foundRoom = r;
                 break;
             }
         }
 
-        const roomId = foundRoom ? foundRoom.roomId : randomUUID();
+        const roomId = foundRoom ? foundRoom.roomId : randomUUID().slice(0, 8);
         const room = foundRoom || {
             roomId,
             text: TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)],
             players: {},
             status: 'waiting',
             isRanked,
-            waitingEndTime: null,
+            waitingEndTime: Date.now() + 10000,
             countdownEndTime: null,
             suddenDeathEndTime: null,
             timerId: null
         };
 
+        // 3. If new room, start the 10s queue timer
         if (!foundRoom) {
             gameRooms.set(roomId, room);
-            room.waitingEndTime = Date.now() + 10000;
-            room.timerId = setTimeout(() => startCountdown(roomId), 10000);
+            room.timerId = setTimeout(() => {
+                const r = gameRooms.get(roomId);
+                if (!r || r.status !== 'waiting') return;
+                
+                if (Object.keys(r.players).length === 1) {
+                    console.log(`Room ${roomId}: Not enough players. Aborting.`);
+                    io.to(roomId).emit('game_error', { message: 'NO OTHER PILOTS DETECTED. ABORTING MISSION...' });
+                    gameRooms.delete(roomId);
+                } else {
+                    startFinalPerkSelection(roomId);
+                }
+            }, 10000);
         }
 
+        // 4. Add player to room
         room.players[socket.id] = { username, progress: 0, typedLength: 0, progressModifier: 0, wpm: 0, finished: false, perk: null, perkUsed: false };
         socket.join(roomId);
 
+        // 5. Notify player and room
         socket.emit('match_found', getCleanRoomState(room));
         io.to(roomId).emit('room_state', getCleanRoomState(room));
 
+        // 6. If room is full (4/4), start early
         if (Object.keys(room.players).length === 4) {
+             console.log(`Room ${roomId}: Full! Moving to perk selection.`);
              if (room.timerId) clearTimeout(room.timerId);
-             startCountdown(roomId);
+             startFinalPerkSelection(roomId);
         }
     };
+
+    socket.on('join_casual', ({ username }) => {
+        joinGame(username, false);
+    });
+    
+    socket.on('join_ranked', ({ username }) => {
+        joinGame(username, true);
+    });
 
     // --- CUSTOM LOBBY (Private) ---
     socket.on('create_private_lobby', ({ username }) => {
@@ -497,7 +521,6 @@ io.on('connection', (socket) => {
         try {
             const lobby = privateLobby.getLobbyByRoomId(roomId);
             if (!lobby || lobby.host !== username) return;
-            // if (!privateLobby.allReady(roomId)) return; // Optional check
 
             const text = TEXT_SNIPPETS[Math.floor(Math.random() * TEXT_SNIPPETS.length)];
             const players = {};
@@ -512,14 +535,17 @@ io.on('connection', (socket) => {
                 status: 'waiting',
                 isRanked: false,
                 isPrivate: true,
-                lobbyEndTime: null,
+                waitingEndTime: Date.now() + 10000,
                 timerId: null,
                 suddenDeathEndTime: null
             };
             
             gameRooms.set(roomId, room);
-            // startCountdown(roomId); // REMOVED: Wait for players to select perks
             io.to(roomId).emit('match_found', getCleanRoomState(room));
+
+            room.timerId = setTimeout(() => {
+                startFinalPerkSelection(roomId);
+            }, 10000);
 
         } catch (error) {
             console.error("Start Game Error:", error);
@@ -544,13 +570,18 @@ io.on('connection', (socket) => {
         const room = gameRooms.get(roomId);
         if (room && room.players[socket.id]) {
             room.players[socket.id].perk = perk;
-        }
-
-        // For all match types, check if all players are ready to start
-        if (room) {
+            
+            // Only start early if EVERYONE currently in the room is ready 
+            // AND the room is full (4/4). 
+            // Otherwise, keep waiting for others to join during the 10s.
             const allPlayersReady = Object.values(room.players).every(p => p.perk);
-            if (allPlayersReady) {
+            const isFull = Object.keys(room.players).length === 4;
+            
+            if (allPlayersReady && isFull) {
                 startCountdown(roomId);
+            } else {
+                // Just update the UI for others
+                io.to(roomId).emit('players_update', room.players);
             }
         }
     });

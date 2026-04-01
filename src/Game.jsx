@@ -1,22 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useLocation, useParams, useOutletContext } from 'react-router-dom';
+import { useLocation, useParams, useOutletContext, useNavigate } from 'react-router-dom';
 import { ControlPanel } from './components/ControlPanel';
 import { RocketDisplay } from './components/RocketDisplay';
 import ResultsModal from './components/ResultsModal';
 import Perks from './components/Perks';
 
-const Overlay = ({ title, subtext, showTimer, time, bigText }) => (
-    <div className="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center text-white">
-        <div className={`font-bold ${bigText ? 'text-9xl text-yellow-400 animate-ping' : 'text-4xl'}`}>{title}</div>
-        {subtext && <p className="mt-4 text-gray-400">{subtext}</p>}
-        {showTimer && <div className="mt-6 text-yellow-400 text-xl">Starting in {time}s</div>}
+const Overlay = ({ title, subtext, showTimer, time, bigText, color }) => (
+    <div className="absolute inset-0 z-50 bg-black/90 flex flex-col items-center justify-center text-white backdrop-blur-sm">
+        <div className={`font-black tracking-tighter ${bigText ? 'text-9xl animate-pulse' : 'text-5xl uppercase'} ${color || 'text-white'}`}>{title}</div>
+        {subtext && <p className="mt-6 text-slate-400 font-bold tracking-[0.2em] uppercase text-sm">{subtext}</p>}
+        {showTimer && <div className="mt-8 text-cyan-400 font-mono text-3xl border-2 border-cyan-500/30 px-6 py-2 rounded-xl bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.2)]">00:{time < 10 ? `0${time}` : time}</div>}
     </div>
 );
 
 const SuddenDeathOverlay = ({ time }) => (
-    <div className="absolute top-20 left-1/2 -translate-x-1/2 z-40 bg-red-600/90 backdrop-blur-sm border-2 border-red-400 rounded-lg p-4 text-white shadow-lg animate-pulse">
-        <h3 className="text-2xl font-bold text-center">SUDDEN DEATH!</h3>
-        <p className="text-lg text-center">Ending in <span className="font-bold text-yellow-300">{time}s</span></p>
+    <div className="absolute top-24 left-1/2 -translate-x-1/2 z-40 bg-red-600/90 backdrop-blur-md border-4 border-red-400 rounded-2xl p-6 text-white shadow-[0_0_30px_rgba(220,38,38,0.4)] animate-pulse">
+        <h3 className="text-3xl font-black text-center uppercase tracking-widest">Sudden Death!</h3>
+        <p className="text-xl text-center font-mono mt-2">TERMINATION IN: <span className="font-black text-yellow-300">{time}s</span></p>
     </div>
 );
 
@@ -24,6 +24,7 @@ const Game = () => {
   const { socket } = useOutletContext();
   const { roomId } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   
   const [gameState, setGameState] = useState(location.state || { status: 'loading', players: {} });
   const [inputValue, setInputValue] = useState('');
@@ -119,6 +120,10 @@ const Game = () => {
     });
     socket.on('match_found', handleState);
     socket.on('perk_effect', handlePerkEffect);
+    socket.on('game_error', ({ message }) => {
+        setGameState(prev => ({ ...prev, status: 'error', errorMessage: message }));
+        setTimeout(() => navigate('/menu'), 4000);
+    });
 
     return () => {
         socket.off('room_state');
@@ -126,8 +131,9 @@ const Game = () => {
         socket.off('game_over');
         socket.off('match_found');
         socket.off('perk_effect');
+        socket.off('game_error');
     };
-  }, [socket, roomId]);
+  }, [socket, roomId, navigate]);
 
   useEffect(() => {
       if (!gameState.endTime) { setTimeLeft(null); return; }
@@ -185,16 +191,35 @@ const Game = () => {
   const targetText = isBlinded ? gameState.text.replace(/[a-zA-Z]/g, '*') : gameState.text;
 
   return (
-    <div className="w-full min-h-screen bg-gray-900 flex flex-col relative w-full max-w-[95%] mx-auto py-8">
-        {!selectedPerk && gameState.status !== 'loading' && <Perks onSelectPerk={handlePerkSelect} />}
+    <div className="w-full min-h-screen bg-transparent flex flex-col relative w-full max-w-[95%] mx-auto py-8">
+        {!selectedPerk && gameState.status !== 'loading' && gameState.status !== 'error' && gameState.status !== 'countdown' && gameState.status !== 'playing' && (
+            <Perks onSelectPerk={handlePerkSelect} countdown={gameState.status === 'perk_selection' ? timeLeft : null} />
+        )}
+        
         {selectedPerk && (
             <>
                 {showResults && <ResultsModal players={gameState.players} myPlayerId={myPlayerId} playerResult={playerResult} isGameOver={isGameOver} />}
-                {gameState.status === 'loading' && <Overlay title="Loading..." />}
-                {gameState.status === 'waiting' && <Overlay title="Waiting..." subtext={`(${Object.keys(gameState.players).length}/4)`} showTimer={!!gameState.endTime} time={timeLeft} />}
-                {gameState.status === 'countdown' && <Overlay title={timeLeft} bigText={true} />}
+                {gameState.status === 'loading' && <Overlay title="Initializing..." subtext="Syncing with Command Center" />}
+                {gameState.status === 'waiting' && (
+                    <Overlay 
+                        title="Matchmaking Queue" 
+                        subtext={`Connecting Crew: ${Object.keys(gameState.players).length}/4`} 
+                        showTimer={!!gameState.endTime} 
+                        time={timeLeft} 
+                    />
+                )}
+                {gameState.status === 'perk_selection' && (
+                    <Overlay 
+                        title="Waiting for Crew" 
+                        subtext="Final Loadout in progress..." 
+                        showTimer={true} 
+                        time={timeLeft} 
+                    />
+                )}
+                {gameState.status === 'countdown' && <Overlay title={timeLeft} bigText={true} color="text-yellow-400" subtext="PREPARE FOR IGNITION" />}
                 {gameState.status === 'sudden_death' && !myPlayer?.finished && <SuddenDeathOverlay time={timeLeft} />}
-                {isSystemLocked && <Overlay title="SYSTEM LOCKOUT" subtext="Terminal Hacked" bigText={false} />}
+                {gameState.status === 'error' && <Overlay title="MISSION ABORTED" subtext={gameState.errorMessage} color="text-red-500" />}
+                {isSystemLocked && <Overlay title="SYSTEM LOCKOUT" subtext="Terminal Hacked" bigText={false} color="text-red-600" />}
                 <div className="flex-1 flex flex-col justify-center">
                     <RocketDisplay players={gameState.players} />
                     <ControlPanel 
@@ -210,6 +235,7 @@ const Game = () => {
                 </div>
             </>
         )}
+        {gameState.status === 'error' && !selectedPerk && <Overlay title="MISSION ABORTED" subtext={gameState.errorMessage} color="text-red-500" />}
     </div>
   );
 };

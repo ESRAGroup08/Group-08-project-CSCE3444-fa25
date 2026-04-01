@@ -11,6 +11,9 @@ const Profile = () => {
   const navigate = useNavigate(); // Hook for navigation
 
   useEffect(() => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
     const fetchUserData = async () => {
       if (!username) {
         setError('No user profile specified.');
@@ -22,7 +25,8 @@ const Profile = () => {
         const response = await fetch(`/api/users/${username}`, {
           headers: {
             'x-username': localStorage.getItem('username')
-          }
+          },
+          signal: controller.signal
         });
         
         if (!response.ok) {
@@ -34,13 +38,22 @@ const Profile = () => {
         setUserData(data);
         setNewUsername(data.username);
       } catch (err) {
-        setError(err.message);
+        if (err.name === 'AbortError') {
+          setError('Request timed out. Please check your connection or try again later.');
+        } else {
+          setError(err.message);
+        }
       } finally {
+        clearTimeout(timeoutId);
         setIsLoading(false);
       }
     };
 
     fetchUserData();
+    return () => {
+      controller.abort();
+      clearTimeout(timeoutId);
+    };
   }, [username]);
 
   const handleUsernameChange = async (e) => {
@@ -97,51 +110,52 @@ const Profile = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center p-8">
-      <div className="w-full max-w-2xl bg-gray-800 p-6 rounded-lg shadow-lg">
-        <h1 className="text-3xl font-bold mb-6 text-center">{userData?.username}'s Profile</h1>
+    <div className="min-h-screen bg-transparent text-white flex flex-col items-center p-8">
+      <div className="w-full max-w-2xl bg-black/40 backdrop-blur-xl p-10 rounded-3xl border border-white/10 shadow-2xl">
+        <div className="flex justify-between items-center mb-10">
+            <h1 className="text-4xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 uppercase">{userData?.username}'s Profile</h1>
+            <Link to="/menu" className="bg-white/5 hover:bg-white/10 px-6 py-2 rounded-xl text-white transition-all border border-white/10 hover:border-white/20 uppercase font-bold tracking-widest text-sm">
+                ← Menu
+            </Link>
+        </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 text-center">
-          <div className="bg-gray-700 p-4 rounded-lg">
-            <p className="text-xl font-semibold">{userData?.gamesPlayed ?? 0}</p>
-            <p className="text-gray-400">Games Played</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          <div className="bg-white/5 p-6 rounded-2xl border border-white/5 flex flex-col items-center group hover:bg-white/10 transition-colors">
+            <p className="text-3xl font-black text-cyan-400 mb-1">{userData?.gamesPlayed ?? 0}</p>
+            <p className="text-white/40 uppercase text-xs font-black tracking-widest">Games</p>
           </div>
-          <div className="bg-gray-700 p-4 rounded-lg">
-            <p className="text-xl font-semibold">{userData?.averageWPM?.toFixed(1) ?? 0}</p>
-            <p className="text-gray-400">Average WPM</p>
+          <div className="bg-white/5 p-6 rounded-2xl border border-white/5 flex flex-col items-center group hover:bg-white/10 transition-colors">
+            <p className="text-3xl font-black text-purple-400 mb-1">{userData?.averageWPM?.toFixed(1) ?? 0}</p>
+            <p className="text-white/40 uppercase text-xs font-black tracking-widest">Avg WPM</p>
           </div>
-          <div className="bg-gray-700 p-4 rounded-lg">
-            <p className="text-xl font-semibold">{userData?.averageAccuracy?.toFixed(1) ?? 0}%</p>
-            <p className="text-gray-400">Average Accuracy</p>
+          <div className="bg-white/5 p-6 rounded-2xl border border-white/5 flex flex-col items-center group hover:bg-white/10 transition-colors">
+            <p className="text-3xl font-black text-emerald-400 mb-1">{userData?.averageAccuracy?.toFixed(1) ?? 0}%</p>
+            <p className="text-white/40 uppercase text-xs font-black tracking-widest">Accuracy</p>
           </div>
         </div>
 
-        <div className="border-t border-gray-700 pt-6">
-          <h2 className="text-2xl font-bold mb-4">Account Settings</h2>
-          <form onSubmit={handleUsernameChange}>
-            <div className="mb-4">
-              <label htmlFor="username" className="block text-sm font-medium text-gray-300 mb-2">Change Username</label>
+        <div className="bg-white/5 p-8 rounded-2xl border border-white/5">
+          <h2 className="text-xl font-black mb-6 uppercase tracking-widest text-white/80">Account Settings</h2>
+          <form onSubmit={handleUsernameChange} className="space-y-6">
+            <div>
+              <label htmlFor="username" className="block text-xs font-black uppercase tracking-widest text-white/40 mb-3 ml-1">Update Username</label>
               <input
                 type="text"
                 id="username"
                 value={newUsername}
                 onChange={(e) => setNewUsername(e.target.value)}
-                className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full p-4 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all text-lg font-bold"
               />
             </div>
-            {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-            {success && <p className="text-green-500 text-sm mb-4">{success}</p>}
+            {error && <p className="text-red-400 text-sm font-bold bg-red-400/10 p-3 rounded-lg border border-red-400/20">{error}</p>}
+            {success && <p className="text-emerald-400 text-sm font-bold bg-emerald-400/10 p-3 rounded-lg border border-emerald-400/20">{success}</p>}
             <button 
               type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300"
+              className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-black py-4 px-6 rounded-xl transition-all shadow-lg hover:shadow-cyan-500/25 uppercase tracking-widest"
             >
-              Save Changes
+              Update Identity
             </button>
           </form>
-        </div>
-        
-        <div className="mt-8 text-center">
-          <Link to="/menu" className="text-blue-400 hover:underline">Back to Main Menu</Link>
         </div>
       </div>
     </div>

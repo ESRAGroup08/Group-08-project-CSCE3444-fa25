@@ -1,0 +1,111 @@
+.animated-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #000000;
+  z-index: -9999; /* Extremely low z-index */
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+/* Star Layers for parallax */
+.star-layer {
+  position: absolute;
+  top: -10%;
+  left: -10%;
+  width: 120%;
+  height: 120%;
+}
+
+.star-layer.slow {
+  animation: moveStars 120s linear infinite;
+}
+
+.star-layer.medium {
+  animation: moveStars 80s linear infinite;
+}
+
+.star-layer.fast {
+  animation: moveStars 50s linear infinite;
+}
+
+@keyframes moveStars {
+  from { transform: translate(0, 0); }
+  to { transform: translate(-5%, -5%); }
+}
+
+/* Stars */
+.star {
+  position: absolute;
+  background-color: white;
+  border-radius: 50%;
+  opacity: 0.8;
+  animation: twinkle var(--duration, 2s) infinite ease-in-out alternate;
+}
+
+@keyframes twinkle {
+  from { opacity: 0.3; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1.2); }
+}
+
+/* Floating Elements (Planets/Rockets) */
+.floating-element {
+  position: absolute;
+  pointer-events: none; /* Let clicks pass through */
+  opacity: 0.7; /* Slightly more transparent */
+}
+
+/* Specific Animations */
+.move-diagonal-1 {
+  animation: moveDiagonal1 40s linear infinite;
+}
+
+.move-diagonal-2 {
+  animation: moveDiagonal2 55s linear infinite;
+}
+
+.move-horizontal {
+  animation: moveHorizontal 30s linear infinite;
+}
+
+.move-vertical {
+  animation: moveVertical 45s linear infinite;
+}
+
+/* Keyframes for movement - extended off-screen to off-screen */
+@keyframes moveDiagonal1 {
+  0% { transform: translate(-10vw, -10vh) rotate(0deg); }
+  100% { transform: translate(110vw, 110vh) rotate(45deg); }
+}
+
+@keyframes moveDiagonal2 {
+  0% { transform: translate(110vw, -10vh) rotate(0deg); }
+  100% { transform: translate(-10vw, 110vh) rotate(-45deg); }
+}
+
+@keyframes moveHorizontal {
+  0% { transform: translate(-20vw, 50vh) rotate(10deg); }
+  100% { transform: translate(120vw, 30vh) rotate(20deg); }
+}
+
+@keyframes moveVertical {
+  0% { transform: translate(20vw, 110vh) rotate(0deg); }
+  100% { transform: translate(20vw, -20vh) rotate(360deg); }
+}
+
+/* Rocket specific wobble */
+.rocket-float {
+  animation: rocketFly 25s linear infinite;
+}
+
+@keyframes rocketFly {
+  0% { transform: translate(-10%, 80vh) rotate(45deg); }
+  25% { transform: translate(25vw, 60vh) rotate(50deg); }
+  50% { transform: translate(50vw, 40vh) rotate(40deg); }
+  75% { transform: translate(75vw, 20vh) rotate(45deg); }
+  100% { transform: translate(110vw, -10vh) rotate(45deg); }
+}

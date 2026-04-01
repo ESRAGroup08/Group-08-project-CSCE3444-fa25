@@ -95,26 +95,26 @@ const Settings = () => {
     switch(settings.theme) {
       case 'light':
         return {
-          container: 'bg-gray-100 text-gray-900',
-          card: 'bg-white text-gray-900 border-gray-300',
-          button: 'bg-blue-500 hover:bg-blue-600',
-          header: 'bg-gradient-to-r from-blue-400 to-blue-600',
+          container: 'bg-transparent text-gray-900',
+          card: 'bg-white/40 backdrop-blur-md text-gray-900 border-gray-300',
+          button: 'bg-blue-600 hover:bg-blue-500',
+          header: 'bg-gradient-to-r from-blue-400/20 to-blue-600/20 border border-blue-500/20',
           accent: 'text-blue-600'
         };
       case 'neon':
         return {
-          container: 'bg-gray-950 text-lime-400',
-          card: 'bg-gray-900 text-lime-400 border-lime-500',
-          button: 'bg-lime-500 hover:bg-lime-400 text-gray-950',
-          header: 'bg-gradient-to-r from-lime-500 to-cyan-500',
+          container: 'bg-transparent text-lime-400',
+          card: 'bg-black/40 backdrop-blur-md text-lime-400 border-lime-500/30',
+          button: 'bg-lime-600 hover:bg-lime-500 text-black font-black',
+          header: 'bg-gradient-to-r from-lime-500/20 to-cyan-500/20 border border-lime-500/20',
           accent: 'text-lime-400'
         };
       default: // dark
         return {
-          container: 'bg-gray-900 text-white',
-          card: 'bg-gray-700 text-white border-gray-600',
-          button: 'bg-cyan-500 hover:bg-cyan-400',
-          header: 'bg-gradient-to-r from-cyan-600 to-blue-600',
+          container: 'bg-transparent text-white',
+          card: 'bg-white/5 backdrop-blur-md text-white border-white/5',
+          button: 'bg-cyan-600 hover:bg-cyan-500',
+          header: 'bg-gradient-to-r from-cyan-600/20 to-blue-600/20 border border-white/10',
           accent: 'text-cyan-400'
         };
     }
@@ -124,15 +124,15 @@ const Settings = () => {
 
   return (
     <div className={`min-h-screen p-8 transition-colors duration-300 ${themeClasses.container}`}>
-      <div className="w-full max-w-4xl mx-auto">
+      <div className="w-full max-w-4xl mx-auto bg-black/40 backdrop-blur-xl p-10 rounded-3xl border border-white/10 shadow-2xl">
         {/* Header */}
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex justify-between items-center mb-10">
           <div>
-            <h1 className="text-5xl font-bold mb-2">⚙️ Settings</h1>
-            <p className={`${themeClasses.accent} opacity-75`}>Customize your gaming experience</p>
+            <h1 className="text-5xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 uppercase">Settings</h1>
+            <p className={`${themeClasses.accent} opacity-75 font-bold uppercase tracking-widest text-xs mt-2`}>Customize your gaming experience</p>
           </div>
-          <Link to="/menu" className={`${themeClasses.button} text-white px-4 py-2 rounded-md transition`}>
-            ← Back to Menu
+          <Link to="/menu" className="bg-white/5 hover:bg-white/10 px-6 py-2 rounded-xl text-white transition-all border border-white/10 hover:border-white/20 uppercase font-bold tracking-widest text-sm">
+            ← Menu
           </Link>
         </div>
 

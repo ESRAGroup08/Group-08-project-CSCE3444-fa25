@@ -6,13 +6,13 @@ const LeaderboardPage = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-8 flex flex-col items-center">
-      <div className="w-full max-w-4xl">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-4xl font-bold text-cyan-400">Global Leaderboard</h1>
+    <div className="min-h-screen bg-transparent text-white p-8 flex flex-col items-center">
+      <div className="w-full max-w-4xl bg-black/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 shadow-2xl">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-5xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">LEADERBOARD</h1>
           <button
             onClick={() => navigate('/menu')}
-            className="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded-md text-white transition"
+            className="bg-white/5 hover:bg-white/10 px-6 py-2 rounded-xl text-white transition-all border border-white/10 hover:border-white/20 uppercase font-bold tracking-widest text-sm"
           >
             ← Back to Menu
           </button>

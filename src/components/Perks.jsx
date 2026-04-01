@@ -37,7 +37,7 @@ const perks = [
   },
 ];
 
-const Perks = ({ onSelectPerk }) => {
+const Perks = ({ onSelectPerk, countdown }) => {
   return (
     <div className="absolute inset-0 z-50 bg-gray-900/95 backdrop-blur-md flex flex-col items-center justify-center p-8">
       <div className="max-w-5xl w-full space-y-12">
@@ -45,9 +45,15 @@ const Perks = ({ onSelectPerk }) => {
           <h2 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 tracking-wider">
             SELECT LOADOUT
           </h2>
-          <p className="text-slate-400 text-lg tracking-widest uppercase">
-            Choose your tactical advantage
-          </p>
+          {countdown !== null ? (
+              <div className="text-yellow-400 font-mono text-2xl animate-pulse">
+                AUTO-ASSIGN IN: 00:0{countdown}
+              </div>
+          ) : (
+              <p className="text-slate-400 text-lg tracking-widest uppercase">
+                Choose your tactical advantage
+              </p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

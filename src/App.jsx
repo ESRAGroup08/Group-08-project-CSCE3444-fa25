@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import io from 'socket.io-client';
+import AnimatedBackground from './components/AnimatedBackground';
+import { applyTheme } from './utils.js';
 
 // Use current window origin for socket connection
 const getServerURL = () => {
@@ -25,6 +27,24 @@ const socket = io(SERVER_URL, {
 function App() {
   const [isConnected, setIsConnected] = useState(socket.connected);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const isLoginPage = location.pathname === '/';
+  const isGamePage = location.pathname.startsWith('/game/');
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('gameSettings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.theme) applyTheme(parsed.theme);
+      } else {
+        applyTheme('dark'); // Default
+      }
+    } catch (e) {
+      applyTheme('dark');
+    }
+  }, []);
 
   useEffect(() => {
     // MERGED: Kept our simplified auth check
@@ -50,6 +70,7 @@ function App() {
 
   return (
     <div className="App">
+      {!isLoginPage && <AnimatedBackground />}
       <Outlet context={{ socket, isConnected }} />
     </div>
   );

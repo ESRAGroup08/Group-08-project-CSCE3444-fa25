@@ -71,7 +71,7 @@ const getUserResponseData = (user) => ({
 
 const authMiddleware = async (req, res, next) => {
     const token = req.headers['x-auth-token'];
-    if (!token) return res.status(401).json({ message: 'Authentication token is required.' });
+    if (!token) return res.status(401).json({ message: 'Missing authentication token. Please include x-auth-token header.' });
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
@@ -119,14 +119,14 @@ app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !username.trim()) return res.status(400).json({ message: 'Username is required.' });
-  if (!password || password.length < 8) return res.status(400).json({ message: 'Password must be at least 8 characters.' });
+  if (!password || password.length < 12) return res.status(400).json({ message: 'Password must be at least 12 characters.' });
 
   try {
     if (await User.findOne({ username: username.trim() })) {
       return res.status(409).json({ message: 'This username is already taken.' });
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, 12);
     const user = await User.create({ username: username.trim(), passwordHash });
     const token = createAuthToken(user);
 

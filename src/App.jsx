@@ -103,7 +103,11 @@ function App() {
   }, [navigate, isLoginPage]);
 
   if (isCheckingAuth && !isLoginPage) {
-    return <div className="h-screen w-full bg-black" aria-live="polite" aria-busy="true" />;
+    return (
+      <div className="h-screen w-full bg-black text-cyan-300 flex items-center justify-center" aria-live="polite" aria-busy="true">
+        Authenticating...
+      </div>
+    );
   }
 
   return (

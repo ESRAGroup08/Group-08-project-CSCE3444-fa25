@@ -172,7 +172,7 @@ app.get('/api/auth/status', authMiddleware, async (req, res) => {
     return res.json({ isAuthenticated: true, user: getUserResponseData(req.authUser) });
 });
 
-app.get('/api/users/:username', async (req, res) => {
+app.get('/api/users/:username', authMiddleware, async (req, res) => {
     try {
         const user = await User.findOne({ username: req.params.username });
         if (!user) return res.status(404).json({ message: 'User not found.' });

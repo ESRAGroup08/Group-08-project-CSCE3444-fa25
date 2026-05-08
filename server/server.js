@@ -8,6 +8,7 @@ const mongoose = require('mongoose');
 const { randomUUID } = require('crypto');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { rateLimit } = require('express-rate-limit');
 const casualMatchmaking = require('./casualMatchmaking');
 const ranking = require('./ranking');
 const privateLobby = require('./privateLobby');
@@ -42,8 +43,21 @@ app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-jwt-secret';
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = '7d';
+
+if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET environment variable is required.');
+}
+
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false
+});
+
+app.use('/api', apiLimiter);
 
 const createAuthToken = (user) => jwt.sign({ userId: user._id.toString() }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
@@ -105,7 +119,7 @@ app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !username.trim()) return res.status(400).json({ message: 'Username is required.' });
-  if (!password || password.length < 6) return res.status(400).json({ message: 'Password must be at least 6 characters.' });
+  if (!password || password.length < 8) return res.status(400).json({ message: 'Password must be at least 8 characters.' });
 
   try {
     if (await User.findOne({ username: username.trim() })) {
@@ -177,9 +191,10 @@ app.put('/api/users/:username', authMiddleware, async (req, res) => {
     try {
         if (req.params.username !== req.authUser.username) return res.status(403).json({ message: 'Forbidden' });
         const { newUsername } = req.body;
-        if (!newUsername || newUsername.trim().length === 0) return res.status(400).json({ message: 'New username cannot be empty.' });
-        if (await User.findOne({ username: newUsername })) return res.status(409).json({ message: 'This username is already taken.' });
-        const user = await User.findOneAndUpdate({ _id: req.authUser._id }, { $set: { username: newUsername.trim() } }, { new: true });
+        const normalizedNewUsername = (newUsername || '').trim();
+        if (!normalizedNewUsername) return res.status(400).json({ message: 'New username cannot be empty.' });
+        if (await User.findOne({ username: normalizedNewUsername })) return res.status(409).json({ message: 'This username is already taken.' });
+        const user = await User.findOneAndUpdate({ _id: req.authUser._id }, { $set: { username: normalizedNewUsername } }, { new: true });
         if (!user) return res.status(404).json({ message: 'User not found.' });
         res.json({ message: 'Username updated successfully!', username: user.username });
     } catch (error) {

@@ -22,9 +22,10 @@ const Profile = () => {
       }
 
       try {
+        const authToken = localStorage.getItem('authToken');
         const response = await fetch(`/api/users/${username}`, {
           headers: {
-            'x-username': localStorage.getItem('username')
+            'x-auth-token': authToken || ''
           },
           signal: controller.signal
         });
@@ -70,11 +71,12 @@ const Profile = () => {
     }
 
     try {
+      const authToken = localStorage.getItem('authToken');
       const response = await fetch(`/api/users/${currentUsername}`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
-          'x-username': localStorage.getItem('username')
+          'x-auth-token': authToken || ''
         },
         body: JSON.stringify({ newUsername: newUsername.trim() }),
       });

@@ -6,9 +6,10 @@ const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false); // New state to toggle between Login and Register
 
-  const handleAuth = (e) => { // Renamed from handleLogin to be more generic
+  const handleAuth = async (e) => { // Renamed from handleLogin to be more generic
     e.preventDefault();
     setError('');
 
@@ -16,11 +17,34 @@ const Login = () => {
       setError('Username is required.');
       return;
     }
+    if (!password) {
+      setError('Password is required.');
+      return;
+    }
 
-    // Since authentication is dummy, any username/password works for both login and register
-    localStorage.setItem('username', username.trim());
-    console.log(`User ${isRegistering ? 'registered' : 'logged in'} as: ${username.trim()}`);
-    navigate('/menu');
+    setIsSubmitting(true);
+
+    try {
+      const endpoint = isRegistering ? '/api/register' : '/api/login';
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Authentication failed.');
+      }
+
+      localStorage.setItem('authToken', data.token);
+      localStorage.setItem('username', data.user.username);
+      navigate('/menu');
+    } catch (err) {
+      setError(err.message || 'Authentication failed.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -80,9 +104,10 @@ const Login = () => {
             )}
             <button
               type="submit"
+              disabled={isSubmitting}
               className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-black text-xl py-5 rounded-xl transition-all shadow-xl hover:shadow-cyan-500/25 hover:-translate-y-1 uppercase tracking-widest mt-4"
             >
-              {isRegistering ? 'Create Profile' : 'Engage'}
+              {isSubmitting ? 'Processing...' : (isRegistering ? 'Create Profile' : 'Engage')}
             </button>
           </div>
         </form>

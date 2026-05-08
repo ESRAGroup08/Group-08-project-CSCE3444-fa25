@@ -26,11 +26,11 @@ const socket = io(SERVER_URL, {
 
 function App() {
   const [isConnected, setIsConnected] = useState(socket.connected);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const navigate = useNavigate();
   const location = useLocation();
 
   const isLoginPage = location.pathname === '/';
-  const isGamePage = location.pathname.startsWith('/game/');
 
   useEffect(() => {
     try {
@@ -47,11 +47,45 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // MERGED: Kept our simplified auth check
-    const storedUsername = localStorage.getItem('username');
-    if (!storedUsername && window.location.hash !== '#/') {
-      navigate('/');
-    }
+    const verifyAuth = async () => {
+      const authToken = localStorage.getItem('authToken');
+
+      if (!authToken) {
+        if (!isLoginPage) navigate('/');
+        setIsCheckingAuth(false);
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/auth/status', {
+          headers: { 'x-auth-token': authToken }
+        });
+
+        if (!response.ok) {
+          throw new Error('Not authenticated');
+        }
+
+        const data = await response.json();
+        if (!data.isAuthenticated) {
+          throw new Error('Not authenticated');
+        }
+
+        if (data.user?.username) {
+          localStorage.setItem('username', data.user.username);
+        }
+        if (isLoginPage) {
+          navigate('/menu');
+        }
+      } catch (error) {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('username');
+        if (!isLoginPage) navigate('/');
+      } finally {
+        setIsCheckingAuth(false);
+      }
+    };
+
+    verifyAuth();
 
     const onConnect = () => setIsConnected(true);
     const onDisconnect = () => setIsConnected(false);
@@ -66,7 +100,11 @@ function App() {
       socket.off('disconnect', onDisconnect);
       socket.off('connect_error', onConnectError);
     };
-  }, [navigate]);
+  }, [navigate, isLoginPage]);
+
+  if (isCheckingAuth && !isLoginPage) {
+    return null;
+  }
 
   return (
     <div className="App">

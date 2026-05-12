@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const userSchema = new mongoose.Schema({
   googleId: { type: String, sparse: true, unique: true },
   username: { type: String, required: true, unique: true, trim: true },
+  passwordHash: { type: String },
   gamesPlayed: { type: Number, default: 0 },
   averageWPM: { type: Number, default: 0 },
   averageAccuracy: { type: Number, default: 0 },

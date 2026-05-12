@@ -16,6 +16,7 @@ const MainMenu = () => {
   };
 
   const handleQuit = () => {
+    localStorage.removeItem('authToken');
     localStorage.removeItem('username');
     navigate('/');
   };

@@ -12,6 +12,7 @@ const Friends = () => {
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
+  const getAuthToken = () => localStorage.getItem('authToken') || '';
   const getCurrentUsername = () => localStorage.getItem('username') || '';
 
   const fetchFriendData = useCallback(async () => {
@@ -25,7 +26,7 @@ const Friends = () => {
       if (!username) throw new Error("You must be logged in.");
 
       const response = await fetch('/api/friends', {
-        headers: { 'x-username': username },
+        headers: { 'x-auth-token': getAuthToken() },
         signal: controller.signal
       });
       
@@ -66,7 +67,7 @@ const Friends = () => {
     
     try {
         const response = await fetch(`/api/users/search?query=${encodeURIComponent(searchQuery)}`, {
-            headers: { 'x-username': getCurrentUsername() }
+            headers: { 'x-auth-token': getAuthToken() }
         });
         if (!response.ok) throw new Error('Search failed.');
         
@@ -108,7 +109,7 @@ const Friends = () => {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'x-username': getCurrentUsername()
+                'x-auth-token': getAuthToken()
             },
             body: JSON.stringify(body),
         });

@@ -6,6 +6,9 @@ const cors = require('cors');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const { randomUUID } = require('crypto');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { rateLimit } = require('express-rate-limit');
 const casualMatchmaking = require('./casualMatchmaking');
 const ranking = require('./ranking');
 const privateLobby = require('./privateLobby');
@@ -40,6 +43,47 @@ app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
 
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_EXPIRES_IN = '7d';
+
+if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET environment variable is required.');
+}
+
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false
+});
+
+app.use('/api', apiLimiter);
+
+const createAuthToken = (user) => jwt.sign({ userId: user._id.toString() }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+
+const getUserResponseData = (user) => ({
+    username: user.username,
+    gamesPlayed: user.gamesPlayed,
+    averageWPM: user.averageWPM,
+    averageAccuracy: user.averageAccuracy,
+    rating: user.rating
+});
+
+const authMiddleware = async (req, res, next) => {
+    const token = req.headers['x-auth-token'];
+    if (!token) return res.status(401).json({ message: 'Missing authentication token. Please include x-auth-token header.' });
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const user = await User.findById(decoded.userId);
+        if (!user) return res.status(401).json({ message: 'Invalid authentication token.' });
+        req.authUser = user;
+        next();
+    } catch (error) {
+        return res.status(401).json({ message: 'Invalid or expired authentication token.' });
+    }
+};
+
 // --- Daily Challenges Definitions ---
 const CHALLENGES = {
   'SPEED_DEMON': { id: 'SPEED_DEMON', description: 'Reach 80 WPM in a single game', reward: 25, target: 80, type: 'wpm' },
@@ -71,29 +115,64 @@ async function checkAndResetChallenges(user) {
 }
 
 /* --- USER & PROFILE API ROUTES --- */
-app.post('/api/login', async (req, res) => {
-  const { username } = req.body;
-  if (!username) return res.status(400).json({ message: "Username is required." });
+app.post('/api/register', async (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !username.trim()) return res.status(400).json({ message: 'Username is required.' });
+  if (!password || password.length < 12) return res.status(400).json({ message: 'Password must be at least 12 characters.' });
+
   try {
-    await User.findOneAndUpdate({ username }, { $setOnInsert: { username } }, { upsert: true, new: true });
-    res.status(200).json({ message: "Logged in successfully", user: { username } });
+    if (await User.findOne({ username: username.trim() })) {
+      return res.status(409).json({ message: 'This username is already taken.' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const user = await User.create({ username: username.trim(), passwordHash });
+    const token = createAuthToken(user);
+
+    return res.status(201).json({
+      message: 'Registered successfully.',
+      token,
+      user: getUserResponseData(user)
+    });
   } catch (error) {
-    res.status(500).json({ message: 'Server error during login.' });
+    return res.status(500).json({ message: 'Server error during registration.' });
   }
 });
 
-app.get('/api/auth/status', async (req, res) => {
-    const username = req.headers['x-username'];
-    if (!username) return res.json({ isAuthenticated: false, user: null });
-    try {
-        const user = await User.findOne({ username });
-        res.json({ isAuthenticated: !!user, user: user ? { username: user.username } : null });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error during auth check.' });
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !username.trim()) return res.status(400).json({ message: "Username is required." });
+  if (!password) return res.status(400).json({ message: "Password is required." });
+
+  try {
+    const user = await User.findOne({ username: username.trim() });
+    if (!user || !user.passwordHash) {
+      return res.status(401).json({ message: 'Invalid username or password.' });
     }
+
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Invalid username or password.' });
+    }
+
+    const token = createAuthToken(user);
+    return res.status(200).json({
+      message: "Logged in successfully",
+      token,
+      user: getUserResponseData(user)
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Server error during login.' });
+  }
 });
 
-app.get('/api/users/:username', async (req, res) => {
+app.get('/api/auth/status', authMiddleware, async (req, res) => {
+    return res.json({ isAuthenticated: true, user: getUserResponseData(req.authUser) });
+});
+
+app.get('/api/users/:username', authMiddleware, async (req, res) => {
     try {
         const user = await User.findOne({ username: req.params.username });
         if (!user) return res.status(404).json({ message: 'User not found.' });
@@ -108,13 +187,14 @@ app.get('/api/users/:username', async (req, res) => {
     }
 });
 
-app.put('/api/users/:username', async (req, res) => {
+app.put('/api/users/:username', authMiddleware, async (req, res) => {
     try {
-        if (req.params.username !== req.headers['x-username']) return res.status(403).json({ message: 'Forbidden' });
+        if (req.params.username !== req.authUser.username) return res.status(403).json({ message: 'Forbidden' });
         const { newUsername } = req.body;
-        if (!newUsername || newUsername.trim().length === 0) return res.status(400).json({ message: 'New username cannot be empty.' });
-        if (await User.findOne({ username: newUsername })) return res.status(409).json({ message: 'This username is already taken.' });
-        const user = await User.findOneAndUpdate({ username: req.params.username }, { $set: { username: newUsername } }, { new: true });
+        const normalizedNewUsername = (newUsername || '').trim();
+        if (!normalizedNewUsername) return res.status(400).json({ message: 'New username cannot be empty.' });
+        if (await User.findOne({ username: normalizedNewUsername })) return res.status(409).json({ message: 'This username is already taken.' });
+        const user = await User.findOneAndUpdate({ _id: req.authUser._id }, { $set: { username: normalizedNewUsername } }, { new: true });
         if (!user) return res.status(404).json({ message: 'User not found.' });
         res.json({ message: 'Username updated successfully!', username: user.username });
     } catch (error) {
@@ -123,7 +203,7 @@ app.put('/api/users/:username', async (req, res) => {
 });
 
 /* --- FRIENDS API ROUTES --- */
-app.get('/api/users/search', async (req, res) => {
+app.get('/api/users/search', authMiddleware, async (req, res) => {
     const { query } = req.query;
     if (!query) return res.status(400).json({ message: 'Search query is required.' });
     try {
@@ -134,11 +214,9 @@ app.get('/api/users/search', async (req, res) => {
     }
 });
 
-app.get('/api/friends', async (req, res) => {
-    const username = req.headers['x-username'];
-    if (!username) return res.status(401).json({ message: 'Unauthorized' });
+app.get('/api/friends', authMiddleware, async (req, res) => {
     try {
-        const user = await User.findOne({ username })
+        const user = await User.findById(req.authUser._id)
             .populate('friends', 'username')
             .populate('friendRequestsSent', 'username')
             .populate('friendRequestsReceived', 'username');
@@ -153,11 +231,10 @@ app.get('/api/friends', async (req, res) => {
     }
 });
 
-app.post('/api/friend-request/send', async (req, res) => {
-    const senderUsername = req.headers['x-username'];
+app.post('/api/friend-request/send', authMiddleware, async (req, res) => {
     const { recipientId } = req.body;
     try {
-        const sender = await User.findOne({ username: senderUsername });
+        const sender = await User.findById(req.authUser._id);
         const recipient = await User.findById(recipientId);
         if (!sender || !recipient) return res.status(404).json({ message: 'User not found.' });
         if (sender._id.equals(recipient._id)) return res.status(400).json({ message: 'You cannot add yourself.' });
@@ -170,11 +247,10 @@ app.post('/api/friend-request/send', async (req, res) => {
     }
 });
 
-app.post('/api/friend-request/accept', async (req, res) => {
-    const acceptorUsername = req.headers['x-username'];
+app.post('/api/friend-request/accept', authMiddleware, async (req, res) => {
     const { senderId } = req.body;
     try {
-        const acceptor = await User.findOne({ username: acceptorUsername });
+        const acceptor = await User.findById(req.authUser._id);
         const sender = await User.findById(senderId);
         if (!acceptor || !sender) return res.status(404).json({ message: 'User not found.' });
 
@@ -192,11 +268,10 @@ app.post('/api/friend-request/accept', async (req, res) => {
     }
 });
 
-app.post('/api/friend-request/reject', async (req, res) => {
-    const currentUserUsername = req.headers['x-username'];
+app.post('/api/friend-request/reject', authMiddleware, async (req, res) => {
     const { otherUserId } = req.body;
     try {
-        const currentUser = await User.findOne({ username: currentUserUsername });
+        const currentUser = await User.findById(req.authUser._id);
         const otherUser = await User.findById(otherUserId);
         if (!currentUser || !otherUser) return res.status(404).json({ message: 'User not found.' });
 
@@ -208,11 +283,10 @@ app.post('/api/friend-request/reject', async (req, res) => {
     }
 });
 
-app.post('/api/friend/remove', async (req, res) => {
-    const currentUserUsername = req.headers['x-username'];
+app.post('/api/friend/remove', authMiddleware, async (req, res) => {
     const { friendIdToRemove } = req.body;
     try {
-        const currentUser = await User.findOne({ username: currentUserUsername });
+        const currentUser = await User.findById(req.authUser._id);
         await User.findByIdAndUpdate(currentUser._id, { $pull: { friends: friendIdToRemove } });
         await User.findByIdAndUpdate(friendIdToRemove, { $pull: { friends: currentUser._id } });
         res.status(200).json({ message: 'Friend removed.' });
@@ -236,12 +310,9 @@ app.get('/api/leaderboard', async (req, res) => {
 });
 
 // NEW: API Endpoint for Daily Challenges
-app.get('/api/challenges', async (req, res) => {
-    const username = req.headers['x-username'];
-    if (!username) return res.status(401).json({ message: 'Unauthorized' });
-
+app.get('/api/challenges', authMiddleware, async (req, res) => {
     try {
-        let user = await User.findOne({ username });
+        let user = await User.findById(req.authUser._id);
         if (!user) return res.status(404).json({ message: 'User not found' });
 
         user = await checkAndResetChallenges(user);

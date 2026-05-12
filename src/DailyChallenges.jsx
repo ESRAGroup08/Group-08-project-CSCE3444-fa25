@@ -7,8 +7,6 @@ const DailyChallenges = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  const username = localStorage.getItem('username') || 'Player';
-
   useEffect(() => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -17,8 +15,9 @@ const DailyChallenges = () => {
       setIsLoading(true);
       setError('');
       try {
+        const authToken = localStorage.getItem('authToken');
         const response = await fetch('/api/challenges', {
-          headers: { 'x-username': username },
+          headers: { 'x-auth-token': authToken || '' },
           signal: controller.signal
         });
         if (!response.ok) {
@@ -43,7 +42,7 @@ const DailyChallenges = () => {
       controller.abort();
       clearTimeout(timeoutId);
     };
-  }, [username]);
+  }, []);
 
   const getDifficultyColor = (reward) => {
     if (reward >= 50) return 'bg-purple-600';
